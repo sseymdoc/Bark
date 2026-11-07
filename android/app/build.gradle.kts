@@ -58,3 +58,7 @@ dependencies {
     // android.jar stubs org.json in JVM unit tests
     testImplementation("org.json:json:20260522")
 }
+
+// BeszelTest reads the live Hub when BARK_MONITOR_URL is set. Gradle does not track environment variables,
+// so without this a run with it set right after one without would be skipped as up to date.
+tasks.withType<Test>().configureEach { outputs.upToDateWhen { System.getenv("BARK_MONITOR_URL") == null } }

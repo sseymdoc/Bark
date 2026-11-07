@@ -25,19 +25,37 @@ object ServerApi {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    private fun request(url: String, method: String = "GET", contentType: String? = null, body: String? = null): Pair<Int, String> {
+    internal fun request(
+        url: String, method: String = "GET", contentType: String? = null, body: String? = null,
+        headers: Map<String, String> = emptyMap(),
+        followRedirects: Boolean = true, maxResponseBytes: Int? = null,
+    ): Pair<Int, String> {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
+            c.instanceFollowRedirects = followRedirects
             c.connectTimeout = 10_000
             c.readTimeout = 10_000
             c.requestMethod = method
+            headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
             if (body != null) {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", contentType)
                 c.outputStream.use { it.write(body.toByteArray()) }
             }
             val code = c.responseCode
-            val text = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            val text = (if (code < 400) c.inputStream else c.errorStream)?.use { input ->
+                if (maxResponseBytes == null) input.bufferedReader().readText() else {
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(4096)
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        check(output.size() + n <= maxResponseBytes) { "response_too_large" }
+                        output.write(buffer, 0, n)
+                    }
+                    output.toString("UTF-8")
+                }
+            } ?: ""
             return code to text
         } finally {
             c.disconnect()

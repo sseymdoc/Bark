@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -30,7 +30,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -61,11 +60,11 @@ fun QrScreen(nav: Nav) {
                 }
             }
             // iOS keeps the QR panel white in dark mode so it stays scannable.
-            Box(Modifier.padding(top = 24.dp).size(240.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(12.dp)) {
+            Box(Modifier.padding(top = 24.dp).size(240.dp).clip(MaterialTheme.shapes.large).background(Color.White).padding(12.dp)) {
                 bitmap?.let { Image(it.asImageBitmap(), contentDescription = text, filterQuality = FilterQuality.None, modifier = Modifier.fillMaxSize()) }
             }
             Text(
-                text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = bk.label, textAlign = TextAlign.Center,
+                text, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp).widthIn(max = 480.dp),
             )
         }

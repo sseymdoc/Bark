@@ -44,6 +44,12 @@ cd android
 
 iOS 的多语言文案改动后，运行 `python3 -I tools/gen_strings.py` 重新生成 `strings_ios.xml`。Android 独有的文案在 `values*/strings.xml` 里手动维护。
 
+## 统一监控连接
+
+「监控 → 设置 → 监控连接」只需一个 HTTPS Hub 地址和 Token Monitor Hub Secret。Token Monitor 保留 SSE，Beszel 卡片每 30 秒读取同一 Hub 的 `GET /api/beszel/snapshot`；需要安装对应后端扩展。手机无需连接 Tailscale，也不保存 Beszel 账号密码。
+
+已有 Hub 设置自动沿用；Secret 迁移到 Android Keystore 加密的应用私有文件，不参与系统备份。Beszel 首次读取成功后删除旧 Beszel 连接凭据。快照或样本超过 3 分钟会显示过期，未采集指标显示 `—`。后端返回固定投影字段，不提供探测目标、家庭 IP、控制或写入功能；共享 Secret 仍拥有 Token Monitor 原有权限。
+
 ## HyperOS 设置建议
 
 App 被强行停止、或被手机管家清理后，FCM 无法唤醒它，推送会延迟到下次打开 App。小米设备首页有「HyperOS 设置检查」卡片，可以一键跳到对应设置：

@@ -38,9 +38,19 @@ data class Server(
 /** App settings (iOS BarkSettings / ServerManager / CryptoSettingManager / GroupMuteSettingManager). */
 object Prefs {
     private lateinit var sp: SharedPreferences
+    private lateinit var monitorSecrets: MonitorSecretStore
+    var monitorSecretUnavailable = false
+        private set
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("bark", Context.MODE_PRIVATE)
+        monitorSecrets = MonitorSecretStore(context)
+        runCatching {
+            val legacy = sp.getString("monitorSecret", null)
+            if (!monitorSecrets.exists && legacy != null) monitorSecrets.write(legacy)
+            monitorSecrets.read()
+            sp.edit { remove("monitorSecret") }
+        }.onFailure { monitorSecretUnavailable = true }
         _servers.value = loadServers()
         _currentServerId.value = sp.getString("currentServerId", null)
     }
@@ -139,6 +149,32 @@ object Prefs {
     var exactDate: Boolean
         get() = sp.getBoolean("exactDate", false)
         set(value) = sp.edit { putBoolean("exactDate", value) }
+
+    /** token-monitor Hub address and shared secret for the Monitor tab. */
+    var monitorUrl: String?
+        get() = sp.getString("monitorUrl", null)
+        set(value) = sp.edit { putString("monitorUrl", value) }
+
+    var monitorSecret: String?
+        get() = runCatching { monitorSecrets.read() }.onFailure { monitorSecretUnavailable = true }.getOrNull()
+        set(value) {
+            monitorSecrets.write(value)
+            sp.edit { remove("monitorSecret") }
+            monitorSecretUnavailable = false
+        }
+
+    fun clearLegacyBeszel() = sp.edit {
+        remove("beszelUrl"); remove("beszelEmail"); remove("beszelPassword")
+    }
+
+    var monitorBeszelCardsAdded: Boolean
+        get() = sp.getBoolean("monitorBeszelCardsAdded", false)
+        set(value) = sp.edit { putBoolean("monitorBeszelCardsAdded", value) }
+
+    /** Monitor cards shown, in order (MonitorLayout); null means the default layout. */
+    var monitorLayout: String?
+        get() = sp.getString("monitorLayout", null)
+        set(value) = sp.edit { putString("monitorLayout", value) }
 
     var lastTab: Int
         get() = sp.getInt("lastTab", 0)

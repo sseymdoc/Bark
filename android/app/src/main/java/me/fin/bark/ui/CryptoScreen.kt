@@ -1,58 +1,38 @@
 package me.fin.bark.ui
 
 import android.content.Context
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import me.fin.bark.R
 import me.fin.bark.data.Prefs
 import me.fin.bark.push.Crypto
 import me.fin.bark.push.CryptoFields
 import me.fin.bark.toast
 
-/** iOS CryptoSettingController. The IV is not configured here: it travels with each push in `iv`. */
+/** Encryption settings (iOS CryptoSettingController). The IV is not configured here: it travels with each push in `iv`. */
 @Composable
 fun CryptoScreen(nav: Nav) {
     val context = LocalContext.current
@@ -72,93 +52,62 @@ fun CryptoScreen(nav: Nav) {
     }
 
     Page(
-        stringResource(R.string.encryptionSettings), onBack = nav.pop, background = bk.white,
+        stringResource(R.string.encryptionSettings), onBack = nav.pop,
         actions = {
-            Text(
-                stringResource(R.string.done), fontSize = 14.sp, color = bk.lightBlueDarken3,
-                modifier = Modifier.clickable {
-                    if (save()) {
-                        context.toast(res.getString(R.string.setSuccessfully))
-                        nav.pop()
-                    }
-                }.padding(horizontal = 10.dp, vertical = 12.dp),
-            )
+            TextButton(onClick = {
+                if (save()) {
+                    context.toast(res.getString(R.string.setSuccessfully))
+                    nav.pop()
+                }
+            }) { Text(stringResource(R.string.done)) }
         },
     ) { padding ->
-        // iOS CryptoSettingController: 14sp labels at 24dp, 45dp fields inset 20dp, 5dp below each label, 20dp between fields.
-        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp)) {
-            FieldLabel(stringResource(R.string.algorithm))
-            DropBox(fields.algorithm, Crypto.algorithms) { fields = fields.copy(algorithm = it) }
-            FieldLabel(stringResource(R.string.mode), top = 20.dp)
-            DropBox(fields.mode, Crypto.modes) { fields = fields.copy(mode = it, padding = Crypto.paddingFor(it)) }
-            FieldLabel(stringResource(R.string.padding), top = 20.dp)
-            DropBox(fields.padding, listOf(fields.padding)) {}
-            FieldLabel("Key", top = 20.dp)
-            BorderTextField(fields.key.orEmpty(), stringResource(R.string.enterKey, keyLength)) { fields = fields.copy(key = it) }
-            Text(
-                stringResource(R.string.copyExample), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 25.dp).fillMaxWidth().height(42.dp).clip(RoundedCornerShape(8.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(36, 51, 236), Color(70, 44, 233))))
-                    .clickable {
-                        if (save()) {
-                            val server = Prefs.currentServer
-                            context.copyAndToast(exampleScript(context, fields, server.key, server.cleanAddress))
-                        }
-                    }
-                    .wrapContentHeight(),
+        Column(
+            Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            DropBox(stringResource(R.string.algorithm), fields.algorithm, Crypto.algorithms) { fields = fields.copy(algorithm = it) }
+            DropBox(stringResource(R.string.mode), fields.mode, Crypto.modes) { fields = fields.copy(mode = it, padding = Crypto.paddingFor(it)) }
+            DropBox(stringResource(R.string.padding), fields.padding, listOf(fields.padding)) {}
+            OutlinedTextField(
+                fields.key.orEmpty(), { fields = fields.copy(key = it) },
+                label = { Text("Key") },
+                placeholder = { Text(stringResource(R.string.enterKey, keyLength)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
+            Button(
+                onClick = {
+                    if (save()) {
+                        val server = Prefs.currentServer
+                        context.copyAndToast(exampleScript(context, fields, server.key, server.cleanAddress))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) { Text(stringResource(R.string.copyExample)) }
         }
     }
 }
 
+/** Read-only outlined field that opens a menu of [options]. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FieldLabel(text: String, top: Dp = 0.dp) {
-    Text(text, fontSize = 14.sp, color = bk.greyDarken4, modifier = Modifier.padding(start = 4.dp, top = top, bottom = 5.dp))
-}
-
-/** iOS DropBoxView/BorderTextField frame: 45dp, radius 8, 1dp border that turns blue.darken5 with a soft glow (0.3s) while active. */
-@Composable
-private fun FieldFrame(active: Boolean, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val border by animateColorAsState(if (active) bk.blueDarken5 else bk.greyLighten2, tween(300))
-    val glow by animateDpAsState(if (active) 3.dp else 0.dp, tween(300))
-    val shape = RoundedCornerShape(8.dp)
-    Box(
-        modifier.fillMaxWidth().height(45.dp)
-            .shadow(glow, shape, ambientColor = bk.blueDarken5, spotColor = bk.blueDarken5)
-            .background(bk.white, shape).border(1.dp, border, shape),
-        contentAlignment = Alignment.CenterStart,
-    ) { content() }
-}
-
-@Composable
-private fun DropBox(value: String, options: List<String>, onSelect: (String) -> Unit) {
+private fun DropBox(label: String, value: String, options: List<String>, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    FieldFrame(open, Modifier.clickable { open = true }) {
-        Text(value, fontSize = 14.sp, color = bk.greyDarken3, modifier = Modifier.padding(start = 16.dp))
-        Icon(painterResource(R.drawable.ic_arrow_down), null, tint = bk.greyLighten2, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp).size(24.dp))
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value, {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { option ->
-                DropdownMenuItem({ Text(option, fontSize = 15.sp) }, onClick = { open = false; onSelect(option) })
+                DropdownMenuItem({ Text(option) }, onClick = { open = false; onSelect(option) })
             }
         }
-    }
-}
-
-@Composable
-private fun BorderTextField(value: String, placeholder: String, onChange: (String) -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    FieldFrame(focused) {
-        BasicTextField(
-            value, onChange,
-            singleLine = true,
-            textStyle = TextStyle(fontSize = 14.sp, color = bk.greyDarken3),
-            cursorBrush = SolidColor(bk.blueDarken5),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).onFocusChanged { focused = it.isFocused },
-            decorationBox = { field ->
-                if (value.isEmpty()) Text(placeholder, fontSize = 14.sp, color = bk.greyDarken1)
-                field()
-            },
-        )
     }
 }
 

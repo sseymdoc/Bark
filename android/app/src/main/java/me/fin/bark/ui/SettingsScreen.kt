@@ -2,16 +2,19 @@ package me.fin.bark.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,13 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,7 +44,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** iOS MessageSettingsViewController, without donations. */
+/** Settings tab (iOS MessageSettingsViewController without donations). */
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
@@ -52,7 +54,6 @@ fun SettingsScreen() {
     val count by remember { dao.count() }.collectAsState(0)
     var archive by remember { mutableStateOf(Prefs.isArchive) }
     var sse by remember { mutableStateOf(Prefs.sse) }
-    val switchColors = SwitchDefaults.colors(checkedTrackColor = bk.systemGreen, checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent)
     val token: String? = Prefs.deviceToken
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -82,72 +83,65 @@ fun SettingsScreen() {
     var ioMenu by remember { mutableStateOf(false) }
     Page(stringResource(R.string.settings)) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
-            InsetGroup(
-                header = { SectionHeader(stringResource(R.string.historyMessage)) },
-                footer = stringResource(R.string.archiveNote),
-                rows = listOf(
-                    {
-                        Box {
-                            GroupRow(
-                                "${stringResource(R.string.export)}/${stringResource(R.string.import_)}",
-                                titleColor = bk.blueDarken1,
-                                detail = "$count ${stringResource(R.string.items)}",
-                                onClick = { ioMenu = true },
-                            )
-                            DropdownMenu(expanded = ioMenu, onDismissRequest = { ioMenu = false }) {
-                                DropdownMenuItem({ Text(stringResource(R.string.export)) }, onClick = {
-                                    ioMenu = false
-                                    export.launch("bark_messages_${SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US).format(Date())}.json")
-                                })
-                                DropdownMenuItem({ Text(stringResource(R.string.import_)) }, onClick = {
-                                    ioMenu = false
-                                    import.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
-                                })
-                            }
-                        }
-                    },
-                    {
-                        GroupRow(stringResource(R.string.defaultArchiveSettings), trailing = {
-                            Switch(archive, { archive = it; Prefs.isArchive = it }, colors = switchColors)
-                        })
-                    },
-                ),
-            )
-            InsetGroup(
-                header = { SectionHeader(stringResource(R.string.sse_title)) },
-                footer = stringResource(R.string.sse_footer),
-                rows = listOf({
-                    GroupRow(stringResource(R.string.sse_switch), trailing = {
-                        Switch(sse, {
-                            sse = it
-                            Prefs.sse = it
-                            if (it) SseService.start(context) else SseService.stop(context)
-                        }, colors = switchColors)
+            SectionHeader(stringResource(R.string.historyMessage))
+            Box {
+                ListItem(
+                    headlineContent = { Text("${stringResource(R.string.export)}/${stringResource(R.string.import_)}") },
+                    supportingContent = { Text("$count ${stringResource(R.string.items)}") },
+                    modifier = Modifier.clickable { ioMenu = true },
+                )
+                DropdownMenu(expanded = ioMenu, onDismissRequest = { ioMenu = false }) {
+                    DropdownMenuItem({ Text(stringResource(R.string.export)) }, onClick = {
+                        ioMenu = false
+                        export.launch("bark_messages_${SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US).format(Date())}.json")
                     })
-                }),
-            )
-            InsetGroup(
-                header = { SectionHeader(stringResource(R.string.info)) },
-                rows = listOf({
-                    // iOS masks the token as ab****wxyz and copies it on tap.
-                    GroupRow("Device Token", detail = token?.let { it.take(2) + "****" + it.takeLast(4) } ?: stringResource(R.string.unknown), onClick = {
-                        token?.let { context.copyAndToast(it) }
+                    DropdownMenuItem({ Text(stringResource(R.string.import_)) }, onClick = {
+                        ioMenu = false
+                        import.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
                     })
-                }),
+                }
+            }
+            SwitchRow(stringResource(R.string.defaultArchiveSettings), stringResource(R.string.archiveNote), archive) { archive = it; Prefs.isArchive = it }
+
+            SectionHeader(stringResource(R.string.sse_title))
+            SwitchRow(stringResource(R.string.sse_switch), stringResource(R.string.sse_footer), sse) {
+                sse = it
+                Prefs.sse = it
+                if (it) SseService.start(context) else SseService.stop(context)
+            }
+
+            SectionHeader(stringResource(R.string.info))
+            // Masked as ab****wxyz like iOS; tapping copies the full token.
+            ListItem(
+                headlineContent = { Text("Device Token") },
+                supportingContent = { Text(token?.let { it.take(2) + "****" + it.takeLast(4) } ?: stringResource(R.string.unknown)) },
+                modifier = Modifier.clickable { token?.let { context.copyAndToast(it) } },
             )
-            InsetGroup(
-                header = { SectionHeader(stringResource(R.string.other)) },
-                rows = listOf(
-                    R.string.faq to res.getString(R.string.faqUrl),
-                    R.string.documentation to res.getString(R.string.docUrl),
-                    R.string.sourceCode to "https://github.com/Finb/Bark",
-                ).map { (label, url) -> { GroupRow(stringResource(label), chevron = true, onClick = { context.openUrl(url) }) } },
-            )
+
+            SectionHeader(stringResource(R.string.other))
+            listOf(
+                R.string.faq to res.getString(R.string.faqUrl),
+                R.string.documentation to res.getString(R.string.docUrl),
+                R.string.sourceCode to "https://github.com/Finb/Bark",
+            ).forEach { (label, url) ->
+                ListItem(headlineContent = { Text(stringResource(label)) }, modifier = Modifier.clickable { context.openUrl(url) })
+            }
             Text(
                 "${stringResource(R.string.version)} ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                fontSize = 12.sp, color = bk.greyDarken1, textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
             )
         }
     }
+}
+
+/** A list row whose whole area toggles the trailing switch. */
+@Composable
+private fun SwitchRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        trailingContent = { Switch(checked, onCheckedChange = null) },
+        modifier = Modifier.toggleable(checked, role = Role.Switch, onValueChange = onChange),
+    )
 }
