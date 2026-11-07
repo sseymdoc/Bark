@@ -103,8 +103,9 @@ class SseService : Service() {
             c.inputStream.bufferedReader().lineSequence().forEach { line ->
                 currentCoroutineContext().ensureActive()
                 val event = parser.line(line) ?: return@forEach
-                val json = JSONObject(event.data)
-                PushProcessor.process(applicationContext, json.keys().asSequence().associateWith { json.getString(it) })
+                // A malformed event is skipped, and its id still advances, so a replay from Last-Event-ID cannot loop on it.
+                val data = runCatching { JSONObject(event.data).let { json -> json.keys().asSequence().associateWith { json.getString(it) } } }.getOrNull()
+                if (data != null) PushProcessor.process(applicationContext, data)
                 event.id?.let { Prefs.setLastEventId(server.id, it) }
             }
             200

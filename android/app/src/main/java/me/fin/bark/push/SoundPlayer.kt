@@ -49,8 +49,9 @@ object SoundPlayer {
         val fallback = if (loop) uri(context, "multiwayinvitation") else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val uri = uri(context, name) ?: fallback ?: return null
         val critical = level == Level.critical
+        val player = MediaPlayer()
         return runCatching {
-            MediaPlayer().apply {
+            player.apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         // Alarm usage still plays in silent mode, the closest Android has to iOS critical alerts.
@@ -69,6 +70,6 @@ object SoundPlayer {
                     current = this
                 }
             }
-        }.getOrNull()
+        }.onFailure { player.release() }.getOrNull() // an unreadable sound must not leak a native player per push
     }
 }

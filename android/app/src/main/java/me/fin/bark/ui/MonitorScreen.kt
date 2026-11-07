@@ -206,7 +206,8 @@ fun MonitorScreen() {
     val historyRevision = data?.historyRevision
     LaunchedEffect(url, secret, historyRevision, reconnect) {
         val address = url ?: return@LaunchedEffect
-        if (MonitorApi.history != null && System.currentTimeMillis() - MonitorApi.historyAt < 5 * 60_000) return@LaunchedEffect
+        // Too soon after the last fetch: wait out the 5 minutes rather than drop the change; a newer revision restarts the wait.
+        if (MonitorApi.history != null) delay(5 * 60_000 - (System.currentTimeMillis() - MonitorApi.historyAt))
         runCatching { MonitorApi.history(address, secret) }.onSuccess { history = it }
     }
 

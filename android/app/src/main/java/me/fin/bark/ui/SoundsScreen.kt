@@ -20,12 +20,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.fin.bark.R
 import me.fin.bark.push.Level
@@ -41,8 +43,10 @@ fun SoundsScreen(nav: Nav) {
     var version by remember { mutableIntStateOf(0) } // bumped to re-list custom sounds
     val custom = remember(version) { SoundPlayer.custom(context) }
     val builtIn = remember { SoundPlayer.builtIn() }
+    val scope = rememberCoroutineScope()
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && importSound(context, uri)) version++
+        // Off the main thread: a large or cloud-backed file can take seconds to copy.
+        if (uri != null) scope.launch { if (withContext(Dispatchers.IO) { importSound(context, uri) }) version++ }
     }
 
     Page(stringResource(R.string.notificationSound), onBack = nav.pop) { padding ->
@@ -97,7 +101,12 @@ private fun importSound(context: Context, uri: Uri): Boolean = runCatching {
         if (it.moveToFirst()) it.getString(0) else null
     } ?: "sound"
     val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    context.contentResolver.openInputStream(uri)!!.use { input ->
-        File(SoundPlayer.customDir(context), safe).outputStream().use { input.copyTo(it) }
+    // Copied to the cache first, so a failed copy never shows up as a truncated custom sound.
+    val part = File.createTempFile("sound", ".part", context.cacheDir)
+    try {
+        context.contentResolver.openInputStream(uri)!!.use { input -> part.outputStream().use { input.copyTo(it) } }
+        check(part.renameTo(File(SoundPlayer.customDir(context), safe)))
+    } finally {
+        part.delete()
     }
 }.isSuccess

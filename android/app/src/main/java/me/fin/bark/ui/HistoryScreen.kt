@@ -414,7 +414,7 @@ private fun ImageViewer(url: String, onDismiss: () -> Unit) {
             TextButton(
                 onClick = {
                     scope.launch {
-                        context.toast(res.getString(if (saveImage(context, url)) R.string.saveSuccess else R.string.noPermission))
+                        context.toast(res.getString(if (saveImage(context, url)) R.string.saveSuccess else R.string.save_image_failed))
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp),
@@ -426,13 +426,17 @@ private fun ImageViewer(url: String, onDismiss: () -> Unit) {
 private suspend fun saveImage(context: Context, url: String): Boolean = withContext(Dispatchers.IO) {
     runCatching {
         val request = ImageRequest.Builder(context).data(url).allowHardware(false).build()
-        val bitmap = (SingletonImageLoader.get(context).execute(request) as SuccessResult).image.toBitmap()
+        val bitmap = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image?.toBitmap() ?: error("image not loaded")
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "bark_${System.currentTimeMillis()}.png")
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Bark")
         }
-        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
-        context.contentResolver.openOutputStream(uri)!!.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("no MediaStore entry")
+        // A failed write must not leave an empty bark_*.png in Pictures/Bark.
+        runCatching { resolver.openOutputStream(uri)!!.use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) } }
+            .onFailure { resolver.delete(uri, null, null) }
+            .getOrThrow()
     }.isSuccess
 }

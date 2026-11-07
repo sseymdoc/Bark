@@ -19,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,6 +63,12 @@ class MainActivity : ComponentActivity() {
     /** Push data of a tapped `action=alert` notification. */
     private val alert = mutableStateOf<Map<String, String>?>(null)
 
+    /** Address from a `bark://addServer` link, waiting for the user to confirm it. */
+    private val pendingServer = mutableStateOf<String?>(null)
+
+    /** Bumped for every request to show History, so the open route (if any) is closed too. */
+    private val historyRequests = mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -75,7 +82,9 @@ class MainActivity : ComponentActivity() {
         SseService.start(this)
         setContent {
             BarkTheme {
-                App(tab, { tab = it; Prefs.lastTab = it }, alert)
+                App(tab, { tab = it; Prefs.lastTab = it }, alert, historyRequests.intValue, pendingServer) { address ->
+                    lifecycleScope.launch { addServer(this@MainActivity, address) }
+                }
             }
         }
     }
@@ -110,14 +119,20 @@ class MainActivity : ComponentActivity() {
             alert.value = data + (Notifier.BODY_TEXT to bodyText.orEmpty())
             return
         }
-        tab = HISTORY
+        openHistory()
     }
 
     private fun handleDeepLink(uri: Uri) {
         when (uri.host) {
-            "addServer" -> uri.getQueryParameter("address")?.let { lifecycleScope.launch { addServer(this@MainActivity, it) } }
-            "history" -> tab = HISTORY
+            // Any app or page can open this link, so the server is only added after the user confirms it.
+            "addServer" -> uri.getQueryParameter("address")?.let { pendingServer.value = it }
+            "history" -> openHistory()
         }
+    }
+
+    private fun openHistory() {
+        tab = HISTORY
+        historyRequests.intValue++
     }
 
     companion object {
@@ -127,10 +142,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, String>?>) {
+private fun App(
+    tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, String>?>,
+    historyRequests: Int, pendingServer: MutableState<String?>, onAddServer: (String) -> Unit,
+) {
     val stack = rememberSaveable(saver = listSaver({ it.toList() }, { it.toMutableStateList() })) { mutableStateListOf<String>() }
     val nav = Nav(push = { stack.add(it) }, pop = { stack.removeLastOrNull() })
     BackHandler(stack.isNotEmpty()) { stack.removeLastOrNull() }
+    // A widget or notification tap opens History even when another page is pushed on top.
+    LaunchedEffect(historyRequests) { if (historyRequests > 0) stack.clear() }
 
     when (val route = stack.lastOrNull()) {
         null -> Scaffold(
@@ -155,6 +175,17 @@ private fun App(tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, 
     }
 
     alert.value?.let { data -> AlertActionDialog(data) { alert.value = null } }
+    pendingServer.value?.let { address ->
+        AlertDialog(
+            onDismissRequest = { pendingServer.value = null },
+            title = { Text(stringResource(R.string.AddServer)) },
+            text = { Text(stringResource(R.string.add_server_confirm, address)) },
+            confirmButton = {
+                TextButton(onClick = { pendingServer.value = null; onAddServer(address) }) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingServer.value = null }) { Text(stringResource(R.string.Cancel)) } },
+        )
+    }
 }
 
 @Composable

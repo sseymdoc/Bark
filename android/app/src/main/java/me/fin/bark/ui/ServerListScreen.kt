@@ -76,8 +76,9 @@ fun AddServerDialog(onDismiss: () -> Unit) {
         val text = result.contents ?: return@rememberLauncherForActivityResult
         if (text.startsWith("http://") || text.startsWith("https://")) address = text else context.toast(res.getString(R.string.InvalidURL))
     }
+    // Not dismissable while adding: leaving would cancel the registration and keep the server without a key.
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(stringResource(R.string.AddServer)) },
         text = {
             Column {
@@ -107,7 +108,7 @@ fun AddServerDialog(onDismiss: () -> Unit) {
                 }
             }) { Text(stringResource(R.string.done)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.Cancel)) } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(R.string.Cancel)) } },
     )
 }
 
@@ -174,9 +175,10 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
         "reset" -> TextDialog(stringResource(R.string.resetKey), stringResource(R.string.resetKeyDesc), "", stringResource(R.string.resetKeyPlaceholder), { dialog = null }) { newKey ->
             val token = Prefs.deviceToken
             scope.launch {
-                ServerApi.register(server.address, DELETED_TOKEN, server.key) // retire the old key first
                 ServerApi.register(server.address, token, newKey.trim())
                     .onSuccess {
+                        // Retire the old key only once the new one works, so a failed reset keeps pushes arriving.
+                        if (server.key.isNotEmpty() && it != server.key) ServerApi.register(server.address, DELETED_TOKEN, server.key)
                         Prefs.updateServer(server.copy(key = it))
                         context.toast(res.getString(R.string.setSuccessfully))
                     }

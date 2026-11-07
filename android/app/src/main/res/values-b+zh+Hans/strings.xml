@@ -18,6 +18,10 @@
     <string name="search">搜索</string>
     <string name="import_success">已导入 %d 条消息</string>
     <string name="import_failed">导入失败：%s</string>
+    <string name="export_success">已导出 %d 条消息</string>
+    <string name="export_failed">导出失败：%s</string>
+    <string name="save_image_failed">图片保存失败</string>
+    <string name="add_server_confirm">要把本机注册到 %s 吗？注册后它就能向你发送通知，仅在信任该服务器时继续。</string>
     <string name="qr_url">URL</string>
     <string name="qr_key">Key</string>
     <string name="scan_qr">扫描二维码</string>

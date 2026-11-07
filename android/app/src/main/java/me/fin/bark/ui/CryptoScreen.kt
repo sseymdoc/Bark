@@ -40,14 +40,14 @@ fun CryptoScreen(nav: Nav) {
     var fields by remember { mutableStateOf(Prefs.crypto ?: CryptoFields()) }
     val keyLength = Crypto.keyLength[fields.algorithm] ?: 16
 
-    /** Validates and saves; keeps an IV saved by older versions only if it still fits the mode. */
+    /** Validates and saves; keeps an IV saved by older versions only if it still fits the mode. Lengths are UTF-8 bytes, as Crypto checks them. */
     fun save(): Boolean {
-        if (fields.key?.length != keyLength) {
+        if (fields.key?.toByteArray()?.size != keyLength) {
             context.toast(res.getString(R.string.enterKey, keyLength))
             return false
         }
         val oldIv = Prefs.crypto?.iv
-        Prefs.crypto = fields.copy(iv = oldIv?.takeIf { it.length == Crypto.ivLength[fields.mode] })
+        Prefs.crypto = fields.copy(iv = oldIv?.takeIf { it.toByteArray().size == Crypto.ivLength[fields.mode] })
         return true
     }
 

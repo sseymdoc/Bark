@@ -59,10 +59,16 @@ fun SettingsScreen() {
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            withContext(Dispatchers.IO) {
-                val json = MessageJson.encode(dao.all())
-                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val messages = dao.all()
+                    val json = MessageJson.encode(messages)
+                    (context.contentResolver.openOutputStream(uri) ?: error("no output stream")).use { it.write(json.toByteArray()) }
+                    messages.size
+                }
             }
+                .onSuccess { context.toast(res.getString(R.string.export_success, it)) }
+                .onFailure { context.toast(res.getString(R.string.export_failed, it.message.orEmpty())) }
         }
     }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

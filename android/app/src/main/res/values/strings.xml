@@ -20,6 +20,10 @@
     <string name="search">Search</string>
     <string name="import_success">Imported %d messages</string>
     <string name="import_failed">Import failed: %s</string>
+    <string name="export_success">Exported %d messages</string>
+    <string name="export_failed">Export failed: %s</string>
+    <string name="save_image_failed">Could not save the image</string>
+    <string name="add_server_confirm">Register this device with %s? It can then send you notifications. Continue only if you trust this server.</string>
     <string name="qr_url">URL</string>
     <string name="qr_key">Key</string>
     <string name="scan_qr">Scan QR code</string>
@@ -54,7 +58,7 @@
     <string name="monitor_kind_weekly">Weekly</string>
     <string name="monitor_kind_billing">Billing period</string>
     <string name="monitor_left">%d%% left</string>
-    <string name="monitor_resets">Reset %s</string>
+    <string name="monitor_resets">Resets in %s</string>
     <string name="monitor_span_dh">%1$dd %2$dh</string>
     <string name="monitor_span_hm">%1$dh %2$dm</string>
     <string name="monitor_span_m">%1$dm</string>
