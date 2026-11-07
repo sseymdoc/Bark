@@ -72,6 +72,8 @@ object Markdown {
 /** Same order as iOS NotificationService: decrypt, markdown, level, badge, autoCopy, archive, mute, call, image, icon. */
 object PushProcessor {
     suspend fun process(context: Context, raw: Map<String, String>) {
+        // The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`.
+        raw["_msgid"]?.let { if (!Prefs.markDelivered(it)) return }
         var push = Push.of(raw)
         if (push.isDelete) {
             push.id?.let { id ->

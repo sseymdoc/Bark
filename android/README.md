@@ -6,7 +6,18 @@ Bark 的 Android 版，推送走 FCM（Firebase Cloud Messaging），推送 API�
 
 - **自建 bark-server，并开启 FCM。** 公共服务器 `api.day.app` 只给 iOS 推送，Android 设备注册会失败。服务端需要包含 `device_type=android` 支持的版本，启动时加 `--fcm-credentials /path/service-account.json`（或环境变量 `BARK_SERVER_FCM_CREDENTIALS`）。
 - **服务端和 App 用同一个 Firebase 项目。** FCM token 只对签发它的项目有效。
-- 设备需要 Google 服务。国行 HyperOS 要在「设置 → 更多设置 → 谷歌基础服务」里打开，且中国大陆网络下 FCM 可能连不上；海外版 HyperOS 可直接使用。
+- FCM 需要 Google 服务。国行 HyperOS 要在「设置 → 更多设置 → 谷歌基础服务」里打开，且中国大陆网络下 FCM 可能连不上；收不到时由下面的 SSE 兜底。
+
+## SSE 兜底
+
+服务端会把每条 Android 推送同时发给 FCM 和 SSE（Server-Sent Events）。App 在前台服务里和每个服务器保持一条 `GET /stream` 长连接，两边哪条先到就显示哪条，后到的按 `_msgid` 丢弃。
+
+- 默认打开，可在「设置 → 后台连接」关闭。打开时通知栏有一条常驻通知（「后台连接」类别，可在系统设置里折叠）。
+- 没有 Google 服务、拿不到 FCM token 时，App 用 `sse:` 开头的 token 注册，之后只走 SSE。
+- 断线期间的推送由服务端暂存（每台设备最近 24 小时、最多 100 条），重连后补发。暂存在内存里，服务端重启会丢。
+- 连接需要 key 加上 App 注册时的 device token，只知道 key 的人读不到推送内容。
+- 需要新版 bark-server（`/info` 里有 `"sse": true`）；旧服务端返回 404，App 每 30 分钟重试一次，不影响 FCM。
+- 支持 `http://` 的自建服务器（和 iOS 一样允许明文 HTTP）。
 
 ## 配置 Firebase
 

@@ -38,6 +38,8 @@ object Notifier {
                 channel(Level.timeSensitive, R.string.channel_time_sensitive, NotificationManager.IMPORTANCE_HIGH),
                 channel(Level.passive, R.string.channel_passive, NotificationManager.IMPORTANCE_LOW),
                 channel(Level.critical, R.string.criticalAlert, NotificationManager.IMPORTANCE_HIGH),
+                // The SSE service's ongoing notification: as quiet as Android allows.
+                NotificationChannel(SseService.CHANNEL, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_MIN),
             ),
         )
     }

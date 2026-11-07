@@ -36,6 +36,7 @@ import me.fin.bark.R
 import me.fin.bark.data.MessageJson
 import me.fin.bark.data.Messages
 import me.fin.bark.data.Prefs
+import me.fin.bark.push.SseService
 import me.fin.bark.toast
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,7 +51,9 @@ fun SettingsScreen() {
     val dao = remember { Messages.dao(context) }
     val count by remember { dao.count() }.collectAsState(0)
     var archive by remember { mutableStateOf(Prefs.isArchive) }
-    val token = Prefs.fcmToken
+    var sse by remember { mutableStateOf(Prefs.sse) }
+    val switchColors = SwitchDefaults.colors(checkedTrackColor = bk.systemGreen, checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent)
+    val token: String? = Prefs.deviceToken
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -105,13 +108,23 @@ fun SettingsScreen() {
                     },
                     {
                         GroupRow(stringResource(R.string.defaultArchiveSettings), trailing = {
-                            Switch(
-                                archive, { archive = it; Prefs.isArchive = it },
-                                colors = SwitchDefaults.colors(checkedTrackColor = bk.systemGreen, checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent),
-                            )
+                            Switch(archive, { archive = it; Prefs.isArchive = it }, colors = switchColors)
                         })
                     },
                 ),
+            )
+            InsetGroup(
+                header = { SectionHeader(stringResource(R.string.sse_title)) },
+                footer = stringResource(R.string.sse_footer),
+                rows = listOf({
+                    GroupRow(stringResource(R.string.sse_switch), trailing = {
+                        Switch(sse, {
+                            sse = it
+                            Prefs.sse = it
+                            if (it) SseService.start(context) else SseService.stop(context)
+                        }, colors = switchColors)
+                    })
+                }),
             )
             InsetGroup(
                 header = { SectionHeader(stringResource(R.string.info)) },

@@ -69,9 +69,7 @@ suspend fun addServer(context: Context, address: String): Boolean {
     val server = Server(address = clean)
     Prefs.saveServers(Prefs.servers.value + server)
     Prefs.setCurrentServer(server.id)
-    Prefs.fcmToken?.let { token ->
-        ServerApi.register(clean, token, "").onSuccess { Prefs.updateServer(server.copy(key = it)) }
-    }
+    ServerApi.register(clean, Prefs.deviceToken, "").onSuccess { Prefs.updateServer(server.copy(key = it)) }
     context.toast(context.getString(R.string.AddedSuccessfully))
     return true
 }
@@ -189,11 +187,7 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
 
     when (dialog) {
         "reset" -> TextDialog(stringResource(R.string.resetKey), stringResource(R.string.resetKeyDesc), "", stringResource(R.string.resetKeyPlaceholder), { dialog = null }) { newKey ->
-            val token = Prefs.fcmToken
-            if (token == null) {
-                context.toast(res.getString(R.string.resetFailed2))
-                return@TextDialog
-            }
+            val token = Prefs.deviceToken
             scope.launch {
                 ServerApi.register(server.address, DELETED_TOKEN, server.key) // retire the old key first
                 ServerApi.register(server.address, token, newKey.trim())

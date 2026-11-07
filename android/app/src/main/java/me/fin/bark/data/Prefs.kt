@@ -80,6 +80,35 @@ object Prefs {
         get() = sp.getString("fcmToken", null)
         set(value) = sp.edit { putString("fcmToken", value) }
 
+    /** Registered when FCM is unavailable; bark-server sends pushes for an `sse:` token over SSE only. */
+    private val sseToken: String
+        @Synchronized get() = sp.getString("sseToken", null)
+            ?: ("sse:" + UUID.randomUUID()).also { token -> sp.edit { putString("sseToken", token) } }
+
+    /** The token the app registers with and authenticates its SSE stream with. */
+    val deviceToken: String get() = fcmToken ?: sseToken
+
+    /** Keep an SSE connection as a fallback for FCM (on by default). */
+    var sse: Boolean
+        get() = sp.getBoolean("sse", true)
+        set(value) = sp.edit { putBoolean("sse", value) }
+
+    fun lastEventId(serverId: String): String? = sp.getString("sseLastId:$serverId", null)
+
+    fun setLastEventId(serverId: String, id: String) = sp.edit { putString("sseLastId:$serverId", id) }
+
+    /**
+     * Records a push's `_msgid` among the last 200 delivered; false when it was already delivered (FCM and SSE
+     * both carry every Android push). Persisted, so a restarted process still drops the late copy.
+     */
+    @Synchronized
+    fun markDelivered(msgId: String): Boolean {
+        val ids = sp.getString("delivered", "")!!.split(',').filter { it.isNotEmpty() }
+        if (msgId in ids) return false
+        sp.edit { putString("delivered", (ids.takeLast(199) + msgId).joinToString(",")) }
+        return true
+    }
+
     /** Archive pushes that don't carry `isArchive`. */
     var isArchive: Boolean
         get() = sp.getBoolean("isArchive", true)

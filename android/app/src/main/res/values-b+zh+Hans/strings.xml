@@ -25,4 +25,10 @@
     <string name="group_mode">分组</string>
     <string name="padding">填充</string>
     <string name="back">返回</string>
+    <string name="channel_connection">后台连接</string>
+    <string name="sse_running">Bark 后台连接中</string>
+    <string name="sse_title">后台连接</string>
+    <string name="sse_switch">通过 SSE 接收</string>
+    <string name="sse_footer">FCM 收不到推送时，由 App 直接从服务器接收。需要常驻通知，耗电略有增加。</string>
+    <string name="sse_fcm_fallback">FCM 不可用，正在通过 SSE 接收推送。</string>
 </resources>

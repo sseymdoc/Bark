@@ -27,4 +27,10 @@
     <string name="group_mode">Groups</string>
     <string name="padding">Padding</string>
     <string name="back">Back</string>
+    <string name="channel_connection">Background connection</string>
+    <string name="sse_running">Bark is connected in the background</string>
+    <string name="sse_title">Background connection</string>
+    <string name="sse_switch">Receive over SSE</string>
+    <string name="sse_footer">Receives pushes straight from your server when FCM cannot deliver them. Needs an ongoing notification and uses a little more battery.</string>
+    <string name="sse_fcm_fallback">FCM is unavailable. Receiving pushes over SSE.</string>
 </resources>

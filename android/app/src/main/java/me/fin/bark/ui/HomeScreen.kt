@@ -154,7 +154,9 @@ private fun TokenErrorCard() {
     val reason = error ?: return
     val res = LocalResources.current
     BarkCard {
-        Text(
+        // With the SSE fallback on, a missing FCM is expected rather than an error.
+        if (Prefs.sse) Text(res.getString(R.string.sse_fcm_fallback), fontSize = 15.sp, color = bk.secondaryLabel)
+        else Text(
             if (reason == "firebase") res.getString(R.string.fcm_not_configured) else res.getString(R.string.fcm_unavailable, reason),
             fontSize = 15.sp, color = bk.systemRed,
         )

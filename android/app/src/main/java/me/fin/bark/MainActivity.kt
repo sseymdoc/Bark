@@ -48,12 +48,14 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import me.fin.bark.data.Messages
 import me.fin.bark.data.Prefs
 import me.fin.bark.data.ServerApi
 import me.fin.bark.push.CallService
 import me.fin.bark.push.Notifier
 import me.fin.bark.push.Push
+import me.fin.bark.push.SseService
 import me.fin.bark.ui.BarkTheme
 import me.fin.bark.ui.CryptoScreen
 import me.fin.bark.ui.HistoryScreen
@@ -78,7 +80,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         tab = Prefs.lastTab
         if (savedInstanceState == null) handleIntent(intent)
-        lifecycleScope.launch { ServerApi.fcmToken()?.let { ServerApi.syncAllServers(it) } }
+        lifecycleScope.launch {
+            // Where Google is unreachable the token request can hang; register with the SSE token instead.
+            withTimeoutOrNull(15_000) { ServerApi.fcmToken() }
+            ServerApi.syncAllServers(Prefs.deviceToken)
+        }
+        SseService.start(this)
         setContent {
             BarkTheme {
                 App(tab, { tab = it; Prefs.lastTab = it }, alert)
