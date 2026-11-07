@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -145,7 +146,9 @@ private fun App(tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, 
                 }
             },
         ) { padding ->
-            Box(Modifier.padding(bottom = padding.calculateBottomPadding()).consumeWindowInsets(padding)) {
+            // Only the bottom bar is handled here; the status bar inset is left for each tab's own top bar.
+            val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
+            Box(Modifier.padding(bottom).consumeWindowInsets(bottom)) {
                 when (tab) {
                     0 -> HomeScreen(nav)
                     MainActivity.HISTORY -> HistoryScreen(nav, null)
