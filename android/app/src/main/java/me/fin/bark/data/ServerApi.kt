@@ -135,12 +135,13 @@ object ServerApi {
 
     /** Re-registers every server with [token], keeping the keys they return (iOS syncAllServers). */
     suspend fun syncAllServers(token: String) = coroutineScope {
-        val updated = Prefs.servers.value.map { s ->
-            async { register(s.address, token, s.key).getOrNull()?.let { s.copy(key = it) } ?: s }
-        }.awaitAll()
-        // Servers may have changed while we were waiting; only update keys of the ones still there.
-        val byId = updated.associateBy { it.id }
-        Prefs.saveServers(Prefs.servers.value.map { byId[it.id]?.let { u -> it.copy(key = u.key) } ?: it })
+        // Server id, the key the request started with, and the key the server returned.
+        val results = Prefs.servers.value.map { s ->
+            async { Triple(s.id, s.key, register(s.address, token, s.key).getOrNull()) }
+        }.awaitAll().associateBy { it.first }
+        // Servers may have changed while we were waiting: apply a result only where the key is still the one it was
+        // registered with, so a key reset done meanwhile is not overwritten by the old key.
+        Prefs.saveServers(Prefs.servers.value.map { s -> results[s.id]?.takeIf { it.second == s.key }?.third?.let { s.copy(key = it) } ?: s })
     }
 
     private object Example {

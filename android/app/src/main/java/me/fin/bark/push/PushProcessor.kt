@@ -100,6 +100,8 @@ object PushProcessor {
         // After decryption, so `{"id":…,"delete":1}` sent encrypted deletes too instead of overwriting the message.
         if (push.isDelete) {
             push.id?.let { id ->
+                // Cancelling the notification does not reach the dismiss receiver, so stop its ringing here; other calls keep ringing.
+                if (CallService.ringingId == id) CallService.stop(context)
                 Notifier.cancel(context, id)
                 Messages.delete(context) { delete(id) }
             }

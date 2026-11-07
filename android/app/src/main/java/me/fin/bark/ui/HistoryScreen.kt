@@ -1,13 +1,17 @@
 package me.fin.bark.ui
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.MediaStore
 import android.text.method.LinkMovementMethod
 import android.util.TypedValue
 import android.widget.TextView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -408,13 +412,21 @@ private fun ImageViewer(url: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val res = LocalResources.current
     val scope = rememberCoroutineScope()
+    val save = { scope.launch { context.toast(res.getString(if (saveImage(context, url)) R.string.saveSuccess else R.string.save_image_failed)) } }
+    // Android 8–9 need the storage permission to write to MediaStore; 10 and later do not.
+    val storage = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) save() else context.toast(res.getString(R.string.noPermission))
+    }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss)) {
             AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             TextButton(
                 onClick = {
-                    scope.launch {
-                        context.toast(res.getString(if (saveImage(context, url)) R.string.saveSuccess else R.string.save_image_failed))
+                    val permission = Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                        storage.launch(permission)
+                    } else {
+                        save()
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp),
