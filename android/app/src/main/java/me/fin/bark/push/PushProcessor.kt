@@ -1,5 +1,6 @@
 package me.fin.bark.push
 
+import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
 import coil3.SingletonImageLoader
@@ -103,7 +104,9 @@ object PushProcessor {
         Notifier.show(context, id, push, bodyText, level, image, icon)
 
         if (!SoundPlayer.shouldPlay(context, level)) return
-        if (push.isCall && CallService.start(context, push.sound, level, push.volume)) return
+        if (push.isCall && CallService.start(context, id, push.sound, level, push.volume)) return
+        // The user or HyperOS may have given the channel a sound; the system already played it, so don't play a second one.
+        if (level != Level.critical && context.getSystemService(NotificationManager::class.java).getNotificationChannel(level.name)?.sound != null) return
         SoundPlayer.start(context, push.sound, level, push.volume, loop = false)
     }
 

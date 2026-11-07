@@ -13,7 +13,8 @@ import me.fin.bark.toast
 /** Notification buttons: copy, mute the group for an hour, and stopping the call sound. */
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        CallService.stop(context)
+        // A dismissal only silences its own call: the system also fires it when other notifications expire.
+        if (intent.action != DISMISS || intent.getStringExtra(Notifier.ID) == CallService.ringingId) CallService.stop(context)
         val push = Push(Notifier.dataOf(intent.extras))
         when (intent.action) {
             COPY -> {

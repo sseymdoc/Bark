@@ -29,7 +29,8 @@ class CallService : Service() {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
 
         player?.release()
-        val level = runCatching { Level.valueOf(intent?.getStringExtra("level")!!) }.getOrDefault(Level.active)
+        ringingId = intent?.getStringExtra("id")
+        val level =runCatching { Level.valueOf(intent?.getStringExtra("level")!!) }.getOrDefault(Level.active)
         player = SoundPlayer.start(this, intent?.getStringExtra("sound"), level, intent?.getFloatExtra("volume", 0.5f) ?: 0.5f, loop = true)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ stopSelf() }, 30_000)
@@ -40,16 +41,21 @@ class CallService : Service() {
         handler.removeCallbacksAndMessages(null)
         player?.release()
         player = null
+        ringingId = null
     }
 
     companion object {
         private const val NOTIFICATION_ID = 30
 
+        /** Id of the push that is ringing, so dismissing some other notification does not stop it. */
+        @Volatile var ringingId: String? = null
+            private set
+
         /** Returns false when Android refused to start it (e.g. the FCM message was deprioritized). */
-        fun start(context: Context, sound: String?, level: Level, volume: Float): Boolean = runCatching {
+        fun start(context: Context, id: String, sound: String?, level: Level, volume: Float): Boolean = runCatching {
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, CallService::class.java).putExtra("sound", sound).putExtra("level", level.name).putExtra("volume", volume),
+                Intent(context, CallService::class.java).putExtra("id", id).putExtra("sound", sound).putExtra("level", level.name).putExtra("volume", volume),
             )
         }.isSuccess
 
