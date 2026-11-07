@@ -40,7 +40,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.fin.bark.R
 import me.fin.bark.data.Prefs
 import me.fin.bark.data.Server
@@ -50,17 +52,23 @@ import me.fin.bark.toast
 /** Token bark-server treats as "this key is gone" (iOS uses it on delete and before a key reset). */
 private const val DELETED_TOKEN = "deleted"
 
-/** Pings, adds, selects and registers a server (iOS NewServerViewModel and the bark://addServer link). */
+/**
+ * Pings and registers a server, then adds and selects it (iOS NewServerViewModel and the bark://addServer link).
+ * Only a registered server is added: one without a key could not receive pushes, so the default stays as it was.
+ */
 suspend fun addServer(context: Context, address: String): Boolean {
     val clean = address.trim()
     if (!ServerApi.ping(clean)) {
         context.toast(context.getString(R.string.InvalidServer))
         return false
     }
-    val server = Server(address = clean)
+    val key = ServerApi.register(clean, Prefs.deviceToken, "").getOrElse {
+        context.toast(context.getString(R.string.InvalidServer) + ": " + it.message.orEmpty())
+        return false
+    }
+    val server = Server(address = clean, key = key)
     Prefs.updateServers { it + server }
     Prefs.setCurrentServer(server.id)
-    ServerApi.register(clean, Prefs.deviceToken, "").onSuccess { Prefs.updateServer(server.copy(key = it)) }
     context.toast(context.getString(R.string.AddedSuccessfully))
     return true
 }
@@ -195,10 +203,13 @@ private fun ServerRow(server: Server, isLast: Boolean) {
                 TextButton(onClick = {
                     dialog = null
                     scope.launch {
-                        if (server.key.isNotEmpty()) ServerApi.register(server.address, DELETED_TOKEN, server.key)
-                        Prefs.updateServers { list -> list.filter { it.id != server.id } }
-                        // Checked after the request: the default may have changed meanwhile. (No id means the first server.)
-                        if (Prefs.currentServerId.value == server.id) Prefs.setCurrentServer(Prefs.servers.value.first().id)
+                        // NonCancellable: once the key is retired, the local delete must follow even if this row leaves the screen.
+                        withContext(NonCancellable) {
+                            if (server.key.isNotEmpty()) ServerApi.register(server.address, DELETED_TOKEN, server.key)
+                            Prefs.updateServers { list -> list.filter { it.id != server.id } }
+                            // Checked after the request: the default may have changed meanwhile. (No id means the first server.)
+                            if (Prefs.currentServerId.value == server.id) Prefs.setCurrentServer(Prefs.servers.value.first().id)
+                        }
                         context.toast(res.getString(R.string.deletedSuccessfully))
                     }
                 }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }

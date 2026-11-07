@@ -18,6 +18,8 @@ import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import me.fin.bark.copyText
 import me.fin.bark.data.Message
@@ -69,25 +71,41 @@ object Markdown {
     fun plain(context: Context, markdown: String) = get(context).toMarkdown(markdown).toString().trim().replace(Regex("\n{2,}"), "\n")
 }
 
+/**
+ * Handles each `_msgid` once. A copy arriving while another is being handled waits for it, then runs only if that one
+ * did not finish (cancelled or failed); a push counts as delivered only after [run]'s block returns.
+ */
+internal class Dedup(private val isDelivered: (String) -> Boolean, private val markDelivered: (String) -> Unit) {
+    private class Claim(val mutex: Mutex = Mutex(), var users: Int = 0)
+
+    private val claims = mutableMapOf<String, Claim>()
+
+    suspend fun run(msgId: String, block: suspend () -> Unit) {
+        val claim = synchronized(claims) { claims.getOrPut(msgId) { Claim() }.also { it.users++ } }
+        try {
+            claim.mutex.withLock {
+                if (isDelivered(msgId)) return
+                block()
+                markDelivered(msgId)
+            }
+        } finally {
+            synchronized(claims) { if (--claim.users == 0) claims.remove(msgId) }
+        }
+    }
+}
+
 /** Same order as iOS NotificationService: decrypt, markdown, level, badge, autoCopy, archive, mute, call, image, icon. */
 object PushProcessor {
-    /** `_msgid`s being handled right now; a second copy arriving meanwhile is dropped. */
-    private val inFlight = mutableSetOf<String>()
+    private val dedup = Dedup(Prefs::isDelivered, Prefs::markDelivered)
 
     /**
-     * The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`. It is recorded as
-     * delivered only once handled, so a copy cancelled midway (server list changed, FCM time limit) is not lost:
-     * FCM or the SSE replay can still bring it.
+     * The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`. Recording it as
+     * delivered only once handled, and making the other copy wait, means a copy cancelled midway (server list changed,
+     * FCM time limit) is not lost: the waiting copy, or the SSE replay, still brings it.
      */
     suspend fun process(context: Context, raw: Map<String, String>) {
-        val msgId = raw["_msgid"]
-        if (msgId != null && !synchronized(inFlight) { !Prefs.isDelivered(msgId) && inFlight.add(msgId) }) return
-        try {
-            handle(context, raw, msgId)
-            msgId?.let(Prefs::markDelivered)
-        } finally {
-            msgId?.let { synchronized(inFlight) { inFlight.remove(it) } }
-        }
+        val msgId = raw["_msgid"] ?: return handle(context, raw, null)
+        dedup.run(msgId) { handle(context, raw, msgId) }
     }
 
     private suspend fun handle(context: Context, raw: Map<String, String>, msgId: String?) {
