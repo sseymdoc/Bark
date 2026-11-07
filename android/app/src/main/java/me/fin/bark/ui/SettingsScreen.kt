@@ -2,13 +2,16 @@ package me.fin.bark.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -18,9 +21,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,44 +76,64 @@ fun SettingsScreen() {
         }
     }
 
+    var ioMenu by remember { mutableStateOf(false) }
     Page(stringResource(R.string.settings)) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
-            SectionTitle(stringResource(R.string.historyMessage))
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.export)) },
-                supportingContent = { Text("$count ${stringResource(R.string.items)}") },
-                modifier = Modifier.clickable {
-                    export.launch("bark_messages_${SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US).format(Date())}.json")
-                },
+            InsetGroup(
+                header = { SectionHeader(stringResource(R.string.historyMessage)) },
+                footer = stringResource(R.string.archiveNote),
+                rows = listOf(
+                    {
+                        Box {
+                            GroupRow(
+                                "${stringResource(R.string.export)}/${stringResource(R.string.import_)}",
+                                titleColor = bk.blueDarken1,
+                                detail = "$count ${stringResource(R.string.items)}",
+                                onClick = { ioMenu = true },
+                            )
+                            DropdownMenu(expanded = ioMenu, onDismissRequest = { ioMenu = false }) {
+                                DropdownMenuItem({ Text(stringResource(R.string.export)) }, onClick = {
+                                    ioMenu = false
+                                    export.launch("bark_messages_${SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US).format(Date())}.json")
+                                })
+                                DropdownMenuItem({ Text(stringResource(R.string.import_)) }, onClick = {
+                                    ioMenu = false
+                                    import.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+                                })
+                            }
+                        }
+                    },
+                    {
+                        GroupRow(stringResource(R.string.defaultArchiveSettings), trailing = {
+                            Switch(
+                                archive, { archive = it; Prefs.isArchive = it },
+                                colors = SwitchDefaults.colors(checkedTrackColor = bk.systemGreen, checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent),
+                            )
+                        })
+                    },
+                ),
             )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.import_)) },
-                modifier = Modifier.clickable { import.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+            InsetGroup(
+                header = { SectionHeader(stringResource(R.string.info)) },
+                rows = listOf({
+                    // iOS masks the token as ab****wxyz and copies it on tap.
+                    GroupRow("Device Token", detail = token?.let { it.take(2) + "****" + it.takeLast(4) } ?: stringResource(R.string.unknown), onClick = {
+                        token?.let { context.copyAndToast(it) }
+                    })
+                }),
             )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.defaultArchiveSettings)) },
-                supportingContent = { Text(stringResource(R.string.archiveNote)) },
-                trailingContent = { Switch(archive, { archive = it; Prefs.isArchive = it }) },
+            InsetGroup(
+                header = { SectionHeader(stringResource(R.string.other)) },
+                rows = listOf(
+                    R.string.faq to res.getString(R.string.faqUrl),
+                    R.string.documentation to res.getString(R.string.docUrl),
+                    R.string.sourceCode to "https://github.com/Finb/Bark",
+                ).map { (label, url) -> { GroupRow(stringResource(label), chevron = true, onClick = { context.openUrl(url) }) } },
             )
-
-            SectionTitle(stringResource(R.string.info))
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.fcm_token)) },
-                supportingContent = { Text(token?.let { it.take(2) + "••••" + it.takeLast(4) } ?: stringResource(R.string.unknown)) },
-                modifier = Modifier.clickable { token?.let { context.copyAndToast(it) } },
-            )
-
-            SectionTitle(stringResource(R.string.other))
-            listOf(
-                R.string.faq to res.getString(R.string.faqUrl),
-                R.string.documentation to res.getString(R.string.docUrl),
-                R.string.sourceCode to "https://github.com/Finb/Bark",
-            ).forEach { (label, url) ->
-                ListItem(headlineContent = { Text(stringResource(label)) }, modifier = Modifier.clickable { context.openUrl(url) })
-            }
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.version)) },
-                supportingContent = { Text(BuildConfig.VERSION_NAME) },
+            Text(
+                "${stringResource(R.string.version)} ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                fontSize = 12.sp, color = bk.greyDarken1, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
             )
         }
     }

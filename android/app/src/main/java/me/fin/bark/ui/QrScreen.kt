@@ -1,11 +1,15 @@
 package me.fin.bark.ui
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -18,9 +22,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -40,9 +50,8 @@ fun QrScreen(nav: Nav) {
     }
     Page(stringResource(R.string.showQRCode), onBack = nav.pop) { padding ->
         Column(
-            Modifier.padding(padding).padding(24.dp).fillMaxWidth(),
+            Modifier.padding(padding).padding(top = 24.dp, start = 24.dp, end = 24.dp).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             SingleChoiceSegmentedButtonRow {
                 listOf(R.string.qr_url to false, R.string.qr_key to true).forEachIndexed { i, (label, value) ->
@@ -51,8 +60,14 @@ fun QrScreen(nav: Nav) {
                     }
                 }
             }
-            bitmap?.let { Image(it.asImageBitmap(), contentDescription = text, modifier = Modifier.size(280.dp)) }
-            Text(text)
+            // iOS keeps the QR panel white in dark mode so it stays scannable.
+            Box(Modifier.padding(top = 24.dp).size(240.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(12.dp)) {
+                bitmap?.let { Image(it.asImageBitmap(), contentDescription = text, filterQuality = FilterQuality.None, modifier = Modifier.fillMaxSize()) }
+            }
+            Text(
+                text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = bk.label, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 16.dp).widthIn(max = 480.dp),
+            )
         }
     }
 }

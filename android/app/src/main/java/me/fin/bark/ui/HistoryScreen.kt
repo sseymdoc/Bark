@@ -6,35 +6,37 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.provider.MediaStore
 import android.text.method.LinkMovementMethod
+import android.util.TypedValue
 import android.widget.TextView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,14 +51,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -83,6 +94,9 @@ import me.fin.bark.toast
 
 private const val PAGE = 20
 
+/** What a message card needs besides the message: date style, delete and image viewer. */
+private class CardActions(val exact: Boolean, val onToggleDate: () -> Unit, val onDelete: (Message) -> Unit, val onImage: (String) -> Unit)
+
 /** iOS MessageListViewController. [group] non-null shows one group ("" = messages without a group). */
 @OptIn(ExperimentalCoroutinesApi::class)
 @Composable
@@ -99,30 +113,27 @@ fun HistoryScreen(nav: Nav, group: String?) {
     var confirm by remember { mutableStateOf<(suspend () -> Unit)?>(null) }
     var viewing by remember { mutableStateOf<String?>(null) }
     val showGroups = group == null && groupMode && query.isEmpty()
-
-    val item: @Composable (Message) -> Unit = { m ->
-        MessageItem(
-            m, exact,
-            onToggleDate = { exact = !exact; Prefs.exactDate = exact },
-            onDelete = { scope.launch { Messages.delete(context) { delete(m.id) } } },
-            onImage = { viewing = it },
-        )
-    }
+    val actions = CardActions(
+        exact,
+        onToggleDate = { exact = !exact; Prefs.exactDate = exact },
+        onDelete = { m -> scope.launch { Messages.delete(context) { delete(m.id) } } },
+        onImage = { viewing = it },
+    )
 
     Page(
         title = group?.ifEmpty { stringResource(R.string.default_) } ?: stringResource(R.string.historyMessage),
         onBack = if (group != null) nav.pop else null,
         actions = {
             if (group == null) {
-                IconButton(onClick = { groupMode = !groupMode; Prefs.groupMode = groupMode }) {
-                    Icon(
-                        if (groupMode) Icons.AutoMirrored.Filled.List else Icons.Default.Menu,
-                        stringResource(if (groupMode) R.string.list_mode else R.string.group_mode),
-                    )
-                }
+                BarButton(
+                    painterResource(if (groupMode) R.drawable.ic_group_collapse else R.drawable.ic_group_expand),
+                    stringResource(if (groupMode) R.string.list_mode else R.string.group_mode),
+                    onClick = { groupMode = !groupMode; Prefs.groupMode = groupMode },
+                    tint = bk.black,
+                )
             }
             Box {
-                IconButton(onClick = { clearMenu = true }) { Icon(Icons.Default.Delete, stringResource(R.string.clear)) }
+                BarButton(painterResource(R.drawable.ic_delete_outline), stringResource(R.string.clear), { clearMenu = true })
                 DropdownMenu(expanded = clearMenu, onDismissRequest = { clearMenu = false }) {
                     DropdownMenuItem({ Text(stringResource(R.string.clearFrom)) }, enabled = false, onClick = {})
                     TimeRange.main.forEach { range ->
@@ -145,20 +156,15 @@ fun HistoryScreen(nav: Nav, group: String?) {
         },
     ) { padding ->
         Column(Modifier.padding(padding)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text(stringResource(R.string.search)) },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+            // iOS cells: 10dp gap under every card, no empty-state view.
+            val listPadding = PaddingValues(top = 4.dp, bottom = 10.dp)
             if (showGroups) {
                 val limit = remember { MutableStateFlow(PAGE) }
                 val groups by remember { limit.flatMapLatest { dao.groups(it) } }.collectAsState(emptyList())
-                LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(contentPadding = listPadding, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item { SearchField(query) { query = it } }
                     items(groups, key = { "g:" + it.name }) { g ->
-                        GroupCard(g, item, onOpen = { nav.push("group:" + g.name) }, onClear = {
+                        GroupItem(g, actions, onOpen = { nav.push("group:" + g.name) }, onClear = {
                             confirm = { Messages.delete(context) { deleteGroup(g.name) } }
                         })
                     }
@@ -168,15 +174,11 @@ fun HistoryScreen(nav: Nav, group: String?) {
                 val q = query.trim()
                 val limit = remember(q) { MutableStateFlow(PAGE) }
                 val messages by remember(q) { limit.flatMapLatest { dao.list(group, q, it) } }.collectAsState(emptyList())
-                if (messages.isEmpty()) {
-                    Text(
-                        stringResource(R.string.widget_empty_title),
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    )
-                }
-                LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(messages, key = { it.id }) { m -> Card { item(m) } }
+                LazyColumn(contentPadding = listPadding, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item { SearchField(query) { query = it } }
+                    items(messages, key = { it.id }) { m ->
+                        SwipeToDelete({ actions.onDelete(m); true }) { MessageCard(m, actions) }
+                    }
                     item { LaunchedEffect(messages.size) { if (messages.size >= limit.value) limit.value += PAGE } }
                 }
             }
@@ -191,7 +193,7 @@ fun HistoryScreen(nav: Nav, group: String?) {
                 TextButton(onClick = {
                     confirm = null
                     scope.launch { action() }
-                }) { Text(stringResource(R.string.clear), color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.clear), color = bk.systemRed) }
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text(stringResource(R.string.Cancel)) } },
         )
@@ -199,84 +201,249 @@ fun HistoryScreen(nav: Nav, group: String?) {
     viewing?.let { url -> ImageViewer(url) { viewing = null } }
 }
 
+/** iOS UISearchBar look: 36dp rounded field on a translucent grey fill. */
 @Composable
-private fun GroupCard(info: GroupInfo, item: @Composable (Message) -> Unit, onOpen: () -> Unit, onClear: () -> Unit) {
-    val context = LocalContext.current
-    var expanded by rememberSaveable(info.name) { mutableStateOf(false) }
-    val messages by remember(info.name, expanded) {
-        Messages.dao(context).list(info.name, "", if (expanded) 5 else 1)
-    }.collectAsState(emptyList())
-    Card {
-        Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(info.name.ifEmpty { stringResource(R.string.default_) }, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onClear) { Text(stringResource(R.string.clear)) }
-        }
-        messages.forEachIndexed { i, m ->
-            if (i > 0) HorizontalDivider()
-            item(m)
-        }
-        if (info.count > 1) {
-            Row(Modifier.padding(horizontal = 8.dp)) {
-                if (expanded) {
-                    TextButton(onClick = { expanded = false }) { Text(stringResource(R.string.showLess)) }
-                } else {
-                    // Up to five messages expand in place; larger groups open their own list.
-                    TextButton(onClick = { if (info.count <= 5) expanded = true else onOpen() }) {
-                        Text(stringResource(R.string.viewAllMessages, info.count))
-                    }
+private fun SearchField(query: String, onChange: (String) -> Unit) {
+    BasicTextField(
+        query, onChange,
+        singleLine = true,
+        textStyle = TextStyle(fontSize = 17.sp, color = bk.label),
+        cursorBrush = SolidColor(bk.systemBlue),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(36.dp),
+        decorationBox = { field ->
+            Row(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(bk.searchFill).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Search, null, tint = bk.secondaryLabel, modifier = Modifier.size(20.dp))
+                Box(Modifier.weight(1f).padding(start = 6.dp)) {
+                    if (query.isEmpty()) Text(stringResource(R.string.search), fontSize = 17.sp, color = bk.secondaryLabel)
+                    field()
                 }
+                if (query.isNotEmpty()) {
+                    Icon(Icons.Default.Clear, null, tint = bk.secondaryLabel, modifier = Modifier.size(18.dp).clickable { onChange("") })
+                }
+            }
+        },
+    )
+}
+
+/** A group in group mode; a group holding one message is shown as a plain card, as on iOS. */
+@Composable
+private fun GroupItem(info: GroupInfo, actions: CardActions, onOpen: () -> Unit, onClear: () -> Unit) {
+    val context = LocalContext.current
+    val messages by remember(info.name) { Messages.dao(context).list(info.name, "", 5) }.collectAsState(emptyList())
+    if (messages.size <= 1) {
+        messages.firstOrNull()?.let { m -> SwipeToDelete({ actions.onDelete(m); true }) { MessageCard(m, actions) } }
+        return
+    }
+    SwipeToDelete({ onClear(); false }) { GroupStack(info, messages, actions, onOpen, onClear) }
+}
+
+/**
+ * iOS MessageGroupTableViewCell. Collapsed: the newest card on top of a stack whose next card peeks out 8dp,
+ * narrowed by 4% per level and slightly masked. Expanded: header, up to five cards 8dp apart and a
+ * "View all" pill. Both states are one layout driven by a spring (iOS: 0.6s, damping 0.8).
+ */
+@Composable
+private fun GroupStack(info: GroupInfo, messages: List<Message>, actions: CardActions, onOpen: () -> Unit, onClear: () -> Unit) {
+    var expanded by rememberSaveable(info.name) { mutableStateOf(false) }
+    val t by animateFloatAsState(if (expanded) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 120f))
+    Layout(
+        content = {
+            GroupHeader(info.name, onCollapse = { expanded = false }, onClear = onClear, modifier = Modifier.graphicsLayer { alpha = t.coerceIn(0f, 1f) })
+            MorePill(info.count, onOpen, Modifier.graphicsLayer { alpha = t.coerceIn(0f, 1f) })
+            messages.forEachIndexed { i, m ->
+                MessageCard(
+                    m, actions,
+                    // Collapsed: the top card expands the group; the peeking ones do nothing.
+                    onClick = if (expanded) null else if (i == 0) ({ expanded = true }) else ({}),
+                    contentAlpha = if (i == 0) 1f else t.coerceIn(0f, 1f),
+                    mask = if (i == 0) 0f else (1 - t).coerceIn(0f, 1f) * (i + 1) * 0.01f,
+                    modifier = Modifier.graphicsLayer { scaleX = lerp(1 - i * 0.04f, 1f, t) },
+                )
+            }
+        },
+        modifier = Modifier.clipToBounds(),
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val header = measurables[0].measure(loose.copy(minWidth = constraints.maxWidth))
+        val pill = measurables[1].measure(loose)
+        val cards = measurables.drop(2).map { it.measure(loose.copy(minWidth = constraints.maxWidth)) }
+        val gap = 8.dp.roundToPx()
+        val top = cards[0].height
+        val expandedY = ArrayList<Int>()
+        var y = header.height + gap
+        cards.forEach { expandedY += y; y += it.height + gap }
+        val pillY = y - gap + 18.dp.roundToPx()
+        val expandedHeight = pillY + pill.height + 18.dp.roundToPx()
+        val collapsedHeight = top + 2 * gap
+        layout(constraints.maxWidth, lerp(collapsedHeight.toFloat(), expandedHeight.toFloat(), t).toInt().coerceAtLeast(0)) {
+            header.place(0, lerp(15.dp.toPx(), 0f, t).toInt())
+            pill.place((constraints.maxWidth - pill.width) / 2, lerp((top + gap - pill.height).toFloat(), pillY.toFloat(), t).toInt())
+            // Drawn bottom-up so the newest card stays on top.
+            for (i in cards.indices.reversed()) {
+                val collapsedY = if (i == 0) 0 else top + gap - cards[i].height
+                cards[i].place(0, lerp(collapsedY.toFloat(), expandedY[i].toFloat(), t).toInt())
             }
         }
     }
 }
 
+/** Group name with the "Show less" / clear control (iOS MessageGroupHeaderView). */
 @Composable
-private fun MessageItem(m: Message, exact: Boolean, onToggleDate: () -> Unit, onDelete: () -> Unit, onImage: (String) -> Unit) {
+private fun GroupHeader(name: String, onCollapse: () -> Unit, onClear: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(remember { MutableInteractionSource() }, null, onClick = onCollapse),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            name.ifEmpty { stringResource(R.string.default_) }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = bk.greyDarken4, maxLines = 1,
+            modifier = Modifier.weight(1f).padding(start = 8.dp, top = 10.dp, bottom = 10.dp),
+        )
+        ShowLessAndClear(onCollapse, onClear)
+    }
+}
+
+/**
+ * iOS ShowLessAndClearView: a "Show less" pill and a round ✕. Tapping ✕ morphs (0.3s) the ✕ into a wide
+ * "Clear" pill while "Show less" shrinks to a circle; the total width stays the same.
+ */
+@Composable
+private fun ShowLessAndClear(onShowLess: () -> Unit, onClear: () -> Unit) {
+    var clearing by remember { mutableStateOf(false) }
+    val c by animateFloatAsState(if (clearing) 1f else 0f, tween(300))
+    val pill = RoundedCornerShape(14.dp)
+    Layout(
+        content = {
+            Row(
+                Modifier.clip(pill).background(bk.greyLighten5).clickable { if (clearing) clearing = false else onShowLess() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_arrow_down), null, tint = bk.greyDarken2, modifier = Modifier.padding(start = 2.dp).size(24.dp))
+                Text(stringResource(R.string.showLess), fontSize = 12.sp, color = bk.greyDarken3, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 2.dp, end = 10.dp))
+            }
+            Box(Modifier.clip(pill).background(bk.greyLighten5).clickable { if (clearing) onClear() else clearing = true }, contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear), tint = bk.greyDarken2, modifier = Modifier.size(20.dp).graphicsLayer { alpha = 1 - c })
+                Text(stringResource(R.string.clear), fontSize = 12.sp, color = bk.greyDarken3, maxLines = 1, softWrap = false, modifier = Modifier.graphicsLayer { alpha = c })
+            }
+        },
+    ) { measurables, _ ->
+        val d = 28.dp.roundToPx()
+        val gap = 5.dp.roundToPx()
+        val full = measurables[0].maxIntrinsicWidth(d)
+        val showLess = measurables[0].measure(Constraints.fixed(lerp(full.toFloat(), d.toFloat(), c).toInt(), d))
+        val clear = measurables[1].measure(Constraints.fixed(lerp(d.toFloat(), full.toFloat(), c).toInt(), d))
+        layout(full + gap + d, d) {
+            showLess.place(0, 0)
+            clear.place(full + gap + d - clear.width, 0)
+        }
+    }
+}
+
+/** "View all N messages" pill (iOS MessageGroupMoreView). */
+@Composable
+private fun MorePill(count: Int, onClick: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier.height(28.dp).clip(RoundedCornerShape(14.dp)).background(bk.greyLighten5).clickable(onClick = onClick).padding(start = 8.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(R.string.viewAllMessages, count), fontSize = 12.sp, color = bk.greyDarken3)
+        Icon(painterResource(R.drawable.ic_sym_keyboard_arrow_right), null, tint = bk.greyDarken2, modifier = Modifier.padding(start = 4.dp).size(16.dp))
+    }
+}
+
+/**
+ * iOS MessageItemView: a rounded panel inset 16dp with title/subtitle (16sp medium), body (14sp), link, image
+ * and the date (11sp). Tapping opens Copy/Remove unless [onClick] overrides it.
+ */
+@Composable
+private fun MessageCard(
+    m: Message,
+    actions: CardActions,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    contentAlpha: Float = 1f,
+    mask: Float = 0f,
+) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
-    Box {
-        Column(Modifier.fillMaxWidth().clickable { menu = true }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(m.title.orEmpty(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                val date = if (exact) Dates.exact(m.createDate) else Dates.ago(context, m.createDate)
-                Text(
-                    date + (m.expireDate?.let { " · " + Dates.expiry(context, it) } ?: ""),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.clickable(onClick = onToggleDate).padding(start = 8.dp),
-                )
+    val shape = RoundedCornerShape(10.dp)
+    Box(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(
+            Modifier.fillMaxWidth().clip(shape).background(bk.bgSecondary)
+                .clickable { if (onClick != null) onClick() else menu = true }
+                .padding(start = 12.dp, end = 12.dp, top = 16.dp)
+                .graphicsLayer { alpha = contentAlpha },
+        ) {
+            m.title?.let {
+                Text(it, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = bk.greyDarken4)
+                Spacer(Modifier.height(6.dp))
             }
-            m.subtitle?.let { Text(it, fontWeight = FontWeight.Bold) }
-            m.body?.let { body -> if (m.isMarkdown) MarkdownText(body) else Text(body) }
+            m.subtitle?.let {
+                Text(it, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = bk.greyDarken4)
+                Spacer(Modifier.height(6.dp))
+            }
+            m.body?.let { body -> if (m.isMarkdown) MarkdownText(body) else Text(body, fontSize = 14.sp, color = bk.greyDarken4) }
             m.url?.let { url ->
-                Text(url, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { context.openUrl(url) })
+                Text(url, fontSize = 14.sp, color = bk.systemBlue, modifier = Modifier.padding(top = 8.dp).clickable { context.openUrl(url) })
             }
-            m.image?.let { url ->
-                AsyncImage(
-                    model = url,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).clip(RoundedCornerShape(8.dp)).clickable { onImage(url) },
-                )
-            }
+            m.image?.let { url -> MessageImage(url) { actions.onImage(url) } }
+            val date = if (actions.exact) Dates.exact(m.createDate) else Dates.ago(context, m.createDate)
+            Text(
+                date + (m.expireDate?.let { " · " + Dates.expiry(context, it) } ?: ""),
+                fontSize = 11.sp, fontWeight = FontWeight.Medium, color = bk.greyBase,
+                modifier = Modifier.padding(vertical = 12.dp).clickable(onClick = actions.onToggleDate),
+            )
         }
+        if (mask > 0f) Box(Modifier.matchParentSize().clip(shape).background(bk.black.copy(alpha = mask)))
+        // iOS disables the card's own controls (image, link, date) while stacked: any tap is the card's tap.
+        if (onClick != null) Box(Modifier.matchParentSize().clickable(remember { MutableInteractionSource() }, null, onClick = onClick))
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem({ Text(stringResource(R.string.Copy2)) }, onClick = { menu = false; context.copyAndToast(m.copyText()) })
-            DropdownMenuItem({ Text(stringResource(R.string.removeMessage), color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete() })
+            DropdownMenuItem({ Text(stringResource(R.string.removeMessage), color = bk.systemRed) }, onClick = { menu = false; actions.onDelete(m) })
         }
+    }
+}
+
+/** iOS sizing: aspect-fit, width ≤ min(500, available, image width), height ≤ 400; 200×100 while loading. */
+@Composable
+private fun MessageImage(url: String, onClick: () -> Unit) {
+    var pixels by remember(url) { mutableStateOf<Pair<Int, Int>?>(null) }
+    BoxWithConstraints(Modifier.padding(top = 8.dp)) {
+        // Downloaded images have scale 1 on iOS, so pixels count as points.
+        val (w, h) = pixels?.let { (iw, ih) ->
+            var w = minOf(500f, maxWidth.value, iw.toFloat())
+            var h = w * ih / iw
+            if (h > 400f) { h = 400f; w = 400f * iw / ih }
+            w.dp to h.dp
+        } ?: (200.dp to 100.dp)
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            onSuccess = { pixels = it.result.image.width to it.result.image.height },
+            modifier = Modifier.size(w, h).clip(RoundedCornerShape(4.dp)).clickable(onClick = onClick),
+        )
     }
 }
 
 @Composable
 private fun MarkdownText(markdown: String) {
-    val color = MaterialTheme.colorScheme.onSurface.toArgb()
-    val link = MaterialTheme.colorScheme.primary.toArgb()
+    val context = LocalContext.current
+    val c = bk
+    val markwon = remember(c) { Markdown.styled(context, c.blueBase.toArgb(), c.greyDarken4.toArgb(), c.greyLighten4.toArgb()) }
     AndroidView(
-        factory = { TextView(it).apply { movementMethod = LinkMovementMethod.getInstance() } },
+        factory = {
+            TextView(it).apply {
+                movementMethod = LinkMovementMethod.getInstance()
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+        },
         update = {
-            it.setTextColor(color)
-            it.setLinkTextColor(link)
-            Markdown.get(it.context).setMarkdown(it, markdown)
+            it.setTextColor(c.greyDarken4.toArgb())
+            it.setLinkTextColor(c.blueBase.toArgb())
+            markwon.setMarkdown(it, markdown)
         },
         modifier = Modifier.fillMaxWidth(),
     )

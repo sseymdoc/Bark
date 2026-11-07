@@ -1,28 +1,31 @@
 package me.fin.bark.ui
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,15 +34,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import androidx.activity.compose.rememberLauncherForActivityResult
 import kotlinx.coroutines.launch
 import me.fin.bark.R
 import me.fin.bark.data.Prefs
@@ -83,19 +92,23 @@ fun AddServerDialog(onDismiss: () -> Unit) {
         title = { Text(stringResource(R.string.AddServer)) },
         text = {
             Column {
-                OutlinedTextField(
+                TextField(
                     value = address,
                     onValueChange = { address = it },
                     label = { Text(stringResource(R.string.ServerAddress)) },
-                    supportingText = { Text(stringResource(R.string.ServerExample)) },
+                    supportingText = { Text(stringResource(R.string.ServerExample), fontSize = 12.sp, color = bk.greyBase) },
+                    trailingIcon = {
+                        BarButton(painterResource(R.drawable.ic_qr_scanner), stringResource(R.string.scan_qr), {
+                            scan.launch(ScanOptions().setBeepEnabled(false).setOrientationLocked(false))
+                        }, tint = bk.greyDarken3)
+                    },
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent),
                     singleLine = true,
                 )
-                TextButton(onClick = { scan.launch(ScanOptions().setBeepEnabled(false).setOrientationLocked(false)) }) {
-                    Text(stringResource(R.string.scan_qr))
-                }
-                TextButton(onClick = { context.openUrl(res.getString(R.string.deployUrl)) }) {
-                    Text(stringResource(R.string.DeploymentDocuments))
-                }
+                Text(
+                    stringResource(R.string.DeploymentDocuments), fontSize = 12.sp, color = bk.blueBase,
+                    modifier = Modifier.padding(top = 24.dp).clickable { context.openUrl(res.getString(R.string.deployUrl)) },
+                )
             }
         },
         confirmButton = {
@@ -117,9 +130,9 @@ fun ServerListScreen(nav: Nav) {
     val currentId by Prefs.currentServerId.collectAsState()
     var adding by remember { mutableStateOf(false) }
     Page(stringResource(R.string.serverList), onBack = nav.pop, actions = {
-        IconButton(onClick = { adding = true }) { Icon(Icons.Default.Add, stringResource(R.string.AddServer)) }
+        BarButton(rememberVectorPainter(Icons.Default.Add), stringResource(R.string.AddServer), { adding = true })
     }) { padding ->
-        LazyColumn(Modifier.padding(padding)) {
+        LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(top = 20.dp, bottom = 20.dp)) {
             items(servers, key = { it.id }) { server ->
                 ServerRow(server, current = server.id == (currentId ?: servers.first().id), isLast = servers.size <= 1)
             }
@@ -138,21 +151,23 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
-    Box {
-        ListItem(
-            leadingContent = {
-                val color = when (online) {
-                    true -> Color(0xFF4CAF50)
-                    false -> MaterialTheme.colorScheme.error
-                    null -> Color.Gray
-                }
-                Box(Modifier.size(10.dp).background(color, CircleShape))
-            },
-            headlineContent = { Text(server.displayName) },
-            supportingContent = { Text("${server.host}\nKey: ${server.key.ifEmpty { stringResource(R.string.none) }}") },
-            trailingContent = if (current) ({ Icon(Icons.Default.Check, null) }) else null,
-            modifier = Modifier.clickable { menu = true },
-        )
+    // iOS ServerListTableViewCell: pill with a 30dp status image, "name\nhost" and the key (or "none").
+    Box(Modifier.padding(horizontal = 18.dp, vertical = 5.dp)) {
+        val pill = RoundedCornerShape(percent = 50)
+        Row(
+            Modifier.fillMaxWidth().clip(pill).background(bk.bgSecondary).border(1.dp, bk.greyLighten3, pill)
+                .clickable { menu = true }.padding(start = 13.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painterResource(if (online == false) R.drawable.img_offline else R.drawable.img_online), null,
+                modifier = Modifier.size(30.dp).graphicsLayer { alpha = if (online == null) 0.3f else 1f },
+            )
+            Column(Modifier.padding(start = 8.dp)) {
+                Text(server.name?.let { "$it\n${server.host}" } ?: server.host, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = bk.greyDarken4)
+                Text(server.key.ifEmpty { "none" }, fontSize = 12.sp, color = bk.greyDarken4, modifier = Modifier.padding(top = 1.dp))
+            }
+        }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem({ Text(stringResource(R.string.copyAddressAndKey)) }, onClick = {
                 menu = false
@@ -165,7 +180,7 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
                 context.toast(res.getString(R.string.setSuccessfully))
             })
             DropdownMenuItem({ Text(stringResource(R.string.setServerName)) }, onClick = { menu = false; dialog = "name" })
-            DropdownMenuItem({ Text(stringResource(R.string.deleteServer), color = MaterialTheme.colorScheme.error) }, onClick = {
+            DropdownMenuItem({ Text(stringResource(R.string.deleteServer), color = bk.systemRed) }, onClick = {
                 menu = false
                 if (isLast) context.toast(res.getString(R.string.deleteFailed)) else dialog = "delete"
             })
@@ -205,7 +220,7 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
                         if (current) Prefs.setCurrentServer(rest.first().id)
                         context.toast(res.getString(R.string.deletedSuccessfully))
                     }
-                }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.confirm), color = bk.systemRed) }
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.Cancel)) } },
         )

@@ -18,10 +18,8 @@
     <string name="hyperos_gms_off">Google services are off. Enable Settings → More settings → Google basic services.</string>
     <string name="hyperos_gms_on">Google services available</string>
     <string name="search">Search</string>
-    <string name="fcm_token">FCM Token</string>
     <string name="import_success">Imported %d messages</string>
     <string name="import_failed">Import failed: %s</string>
-    <string name="none">None</string>
     <string name="qr_url">URL</string>
     <string name="qr_key">Key</string>
     <string name="scan_qr">Scan QR code</string>

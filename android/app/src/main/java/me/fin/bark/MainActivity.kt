@@ -7,18 +7,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,7 +35,14 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -54,6 +64,7 @@ import me.fin.bark.ui.ServerListScreen
 import me.fin.bark.ui.SettingsScreen
 import me.fin.bark.ui.SoundsScreen
 import me.fin.bark.ui.addServer
+import me.fin.bark.ui.bk
 import me.fin.bark.ui.openUrl
 
 class MainActivity : ComponentActivity() {
@@ -129,22 +140,7 @@ private fun App(tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, 
 
     when (val route = stack.lastOrNull()) {
         null -> Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    listOf(
-                        Triple(R.string.service, Icons.Default.Home, 0),
-                        Triple(R.string.historyMessage, Icons.AutoMirrored.Filled.List, MainActivity.HISTORY),
-                        Triple(R.string.settings, Icons.Default.Settings, 2),
-                    ).forEach { (label, icon, index) ->
-                        NavigationBarItem(
-                            selected = tab == index,
-                            onClick = { onTab(index) },
-                            icon = { Icon(icon, null) },
-                            label = { Text(stringResource(label)) },
-                        )
-                    }
-                }
-            },
+            bottomBar = { TabBar(tab, onTab) },
         ) { padding ->
             // Only the bottom bar is handled here; the status bar inset is left for each tab's own top bar.
             val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
@@ -166,6 +162,31 @@ private fun App(tab: Int, onTab: (Int) -> Unit, alert: MutableState<Map<String, 
     alert.value?.let { data -> AlertActionDialog(data) { alert.value = null } }
 }
 
+/** iOS tab bar: 49dp, template icons over 10sp labels, no selection indicator, hairline on top. */
+@Composable
+private fun TabBar(tab: Int, onTab: (Int) -> Unit) {
+    val separator = bk.separator
+    Row(
+        Modifier.fillMaxWidth().background(bk.bar)
+            .drawBehind { drawLine(separator, Offset.Zero, Offset(size.width, 0f), 1f) }
+            .navigationBarsPadding().height(49.dp),
+    ) {
+        listOf(
+            Triple(R.string.service, R.drawable.ic_tab_service, 0),
+            Triple(R.string.historyMessage, R.drawable.ic_sym_history, MainActivity.HISTORY),
+            Triple(R.string.settings, R.drawable.ic_tab_settings, 2),
+        ).forEach { (label, icon, index) ->
+            val color = if (tab == index) bk.greyDarken4 else bk.systemGray
+            Column(
+                Modifier.weight(1f).fillMaxHeight().clickable { onTab(index) }.padding(top = 5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(26.dp))
+                Text(stringResource(label), fontSize = 10.sp, fontWeight = FontWeight.Medium, color = color, modifier = Modifier.padding(top = 1.dp))
+            }
+        }
+    }
+}
 
 /** `action=alert`: copy the content, or share every parameter (iOS "More Actions"). */
 @Composable

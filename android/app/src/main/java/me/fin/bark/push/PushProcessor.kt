@@ -10,7 +10,9 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
+import io.noties.markwon.core.MarkwonTheme
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.async
@@ -41,12 +43,27 @@ object Markdown {
     @Volatile
     private var markwon: Markwon? = null
 
+    private fun builder(context: Context) = Markwon.builder(context)
+        .usePlugin(TablePlugin.create(context))
+        .usePlugin(StrikethroughPlugin.create())
+
     fun get(context: Context): Markwon = markwon ?: synchronized(this) {
-        markwon ?: Markwon.builder(context.applicationContext)
-            .usePlugin(TablePlugin.create(context))
-            .usePlugin(StrikethroughPlugin.create())
-            .build().also { markwon = it }
+        markwon ?: builder(context.applicationContext).build().also { markwon = it }
     }
+
+    /** History list rendering, styled like iOS MarkdownParser: underlined links, tinted inline code, 20/18/16/14 headings, no quote bar. */
+    fun styled(context: Context, link: Int, text: Int, codeBackground: Int): Markwon = builder(context)
+        .usePlugin(object : AbstractMarkwonPlugin() {
+            override fun configureTheme(builder: MarkwonTheme.Builder) {
+                builder.linkColor(link).isLinkUnderlined(true)
+                    .codeTextColor(link).codeBackgroundColor(codeBackground)
+                    .codeBlockTextColor(text).codeBlockBackgroundColor(codeBackground)
+                    .blockQuoteColor(0x01000000) // 0 would mean "default"; nearly transparent hides the bar
+                    .headingBreakHeight(0)
+                    .headingTextSizeMultipliers(floatArrayOf(20f / 14, 18f / 14, 16f / 14, 1f, 1f, 1f))
+            }
+        })
+        .build()
 
     /** Notification text for a markdown body, as iOS MarkdownProcessor renders it. */
     fun plain(context: Context, markdown: String) = get(context).toMarkdown(markdown).toString().trim().replace(Regex("\n{2,}"), "\n")
