@@ -71,6 +71,7 @@ object Prefs {
         return list?.takeIf { it.isNotEmpty() } ?: listOf(Server(address = BuildConfig.DEFAULT_SERVER))
     }
 
+    @Synchronized
     fun saveServers(list: List<Server>) {
         // Like iOS, there is always at least one server.
         val value = list.ifEmpty { listOf(Server(address = BuildConfig.DEFAULT_SERVER)) }
@@ -78,7 +79,11 @@ object Prefs {
         sp.edit { putString("servers", JSONArray(value.map { it.toJson() }).toString()) }
     }
 
-    fun updateServer(server: Server) = saveServers(servers.value.map { if (it.id == server.id) server else it })
+    /** Reads, changes and saves the list in one step, so updates from the UI, SSE and sync do not drop each other. */
+    @Synchronized
+    fun updateServers(change: (List<Server>) -> List<Server>) = saveServers(change(servers.value))
+
+    fun updateServer(server: Server) = updateServers { list -> list.map { if (it.id == server.id) server else it } }
 
     fun setCurrentServer(id: String) {
         _currentServerId.value = id

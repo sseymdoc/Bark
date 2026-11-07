@@ -141,7 +141,7 @@ object ServerApi {
         }.awaitAll().associateBy { it.first }
         // Servers may have changed while we were waiting: apply a result only where the key is still the one it was
         // registered with, so a key reset done meanwhile is not overwritten by the old key.
-        Prefs.saveServers(Prefs.servers.value.map { s -> results[s.id]?.takeIf { it.second == s.key }?.third?.let { s.copy(key = it) } ?: s })
+        Prefs.updateServers { list -> list.map { s -> results[s.id]?.takeIf { it.second == s.key }?.third?.let { s.copy(key = it) } ?: s } }
     }
 
     private object Example {

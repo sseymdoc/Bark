@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -103,9 +104,17 @@ class SseService : Service() {
             c.inputStream.bufferedReader().lineSequence().forEach { line ->
                 currentCoroutineContext().ensureActive()
                 val event = parser.line(line) ?: return@forEach
-                // A malformed event is skipped, and its id still advances, so a replay from Last-Event-ID cannot loop on it.
+                // A malformed event, or one that fails to process (say a database error), is skipped and its id still
+                // advances, so a replay from Last-Event-ID cannot loop on it. Cancellation leaves it for the replay.
                 val data = runCatching { JSONObject(event.data).let { json -> json.keys().asSequence().associateWith { json.getString(it) } } }.getOrNull()
-                if (data != null) PushProcessor.process(applicationContext, data)
+                if (data != null) {
+                    try {
+                        PushProcessor.process(applicationContext, data)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                    }
+                }
                 event.id?.let { Prefs.setLastEventId(server.id, it) }
             }
             200

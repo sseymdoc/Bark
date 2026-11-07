@@ -53,7 +53,7 @@ object SoundPlayer {
         val fallback = if (loop) uri(context, "multiwayinvitation") else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val uri = uri(context, name) ?: fallback ?: return null
         val critical = level == Level.critical
-        val player = MediaPlayer()
+        val player = runCatching { MediaPlayer() }.getOrElse { return null } // the constructor can throw too
         return runCatching {
             player.apply {
                 setAudioAttributes(

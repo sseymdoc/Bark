@@ -58,7 +58,7 @@ suspend fun addServer(context: Context, address: String): Boolean {
         return false
     }
     val server = Server(address = clean)
-    Prefs.saveServers(Prefs.servers.value + server)
+    Prefs.updateServers { it + server }
     Prefs.setCurrentServer(server.id)
     ServerApi.register(clean, Prefs.deviceToken, "").onSuccess { Prefs.updateServer(server.copy(key = it)) }
     context.toast(context.getString(R.string.AddedSuccessfully))
@@ -177,10 +177,11 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
             scope.launch {
                 ServerApi.register(server.address, token, newKey.trim())
                     .onSuccess {
-                        // Retire the old key only once the new one works, so a failed reset keeps pushes arriving.
-                        if (server.key.isNotEmpty() && it != server.key) ServerApi.register(server.address, DELETED_TOKEN, server.key)
                         Prefs.updateServer(server.copy(key = it))
                         context.toast(res.getString(R.string.setSuccessfully))
+                        // Retire the old key only after the new one is saved: a failed or interrupted reset at worst
+                        // leaves the old key working too, never the app holding a retired key.
+                        if (server.key.isNotEmpty() && it != server.key) ServerApi.register(server.address, DELETED_TOKEN, server.key)
                     }
                     .onFailure { context.toast(res.getString(R.string.resetFailed) + ": " + it.message) }
             }
@@ -196,9 +197,8 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
                     dialog = null
                     scope.launch {
                         if (server.key.isNotEmpty()) ServerApi.register(server.address, DELETED_TOKEN, server.key)
-                        val rest = Prefs.servers.value.filter { it.id != server.id }
-                        Prefs.saveServers(rest)
-                        if (current) Prefs.setCurrentServer(rest.first().id)
+                        Prefs.updateServers { list -> list.filter { it.id != server.id } }
+                        if (current) Prefs.setCurrentServer(Prefs.servers.value.first().id)
                         context.toast(res.getString(R.string.deletedSuccessfully))
                     }
                 }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
