@@ -17,15 +17,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import me.fin.bark.MainActivity
 import me.fin.bark.R
 import me.fin.bark.data.Prefs
 import me.fin.bark.data.Server
 import me.fin.bark.data.ServerApi
+import me.fin.bark.data.closeOnCancel
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -90,27 +91,23 @@ class SseService : Service() {
     private suspend fun stream(server: Server, onOpen: () -> Unit): Int {
         val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
         val c = URL("${server.cleanAddress}/stream?key=${enc(server.key)}&devicetoken=${enc(Prefs.deviceToken)}").openConnection() as HttpURLConnection
-        // Blocking reads ignore coroutine cancellation; closing the socket ends them.
-        val closer = currentCoroutineContext().job.invokeOnCompletion { c.disconnect() }
-        try {
+        // Blocking reads ignore coroutine cancellation; closeOnCancel disconnects as soon as a changed server list cancels us.
+        return c.closeOnCancel {
             c.connectTimeout = 15_000
             c.readTimeout = 60_000 // the server pings every 25s
             c.setRequestProperty("Accept", "text/event-stream")
             Prefs.lastEventId(server.id)?.let { c.setRequestProperty("Last-Event-ID", it) }
-            if (c.responseCode != 200) return c.responseCode
+            if (c.responseCode != 200) return@closeOnCancel c.responseCode
             onOpen()
             val parser = SseParser()
-            val reader = c.inputStream.bufferedReader()
-            while (true) {
-                val line = reader.readLine() ?: return 200
-                val event = parser.line(line) ?: continue
+            c.inputStream.bufferedReader().lineSequence().forEach { line ->
+                currentCoroutineContext().ensureActive()
+                val event = parser.line(line) ?: return@forEach
                 val json = JSONObject(event.data)
                 PushProcessor.process(applicationContext, json.keys().asSequence().associateWith { json.getString(it) })
                 event.id?.let { Prefs.setLastEventId(server.id, it) }
             }
-        } finally {
-            closer.dispose()
-            c.disconnect()
+            200
         }
     }
 

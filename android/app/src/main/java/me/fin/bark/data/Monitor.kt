@@ -2,7 +2,7 @@ package me.fin.bark.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import me.fin.bark.push.SseParser
 import org.json.JSONArray
@@ -571,9 +571,8 @@ object MonitorApi {
     /** Follows `GET /api/stats/stream` (protocol v4: snapshots, then patches) until it drops; [onStats] runs on the main thread. */
     suspend fun stream(url: String, secret: String?, onStats: (MonitorStats) -> Unit) = withContext(Dispatchers.IO) {
         val c = URL("${base(url)}/api/stats/stream").openConnection() as HttpURLConnection
-        // Blocking reads ignore coroutine cancellation; closing the socket ends them.
-        val closer = currentCoroutineContext().job.invokeOnCompletion { c.disconnect() }
-        try {
+        // Blocking reads ignore coroutine cancellation; closeOnCancel disconnects as soon as the tab is left.
+        c.closeOnCancel {
             c.instanceFollowRedirects = false
             c.connectTimeout = 15_000
             c.readTimeout = 75_000 // the Hub sends a heartbeat every 30 s
@@ -585,17 +584,13 @@ object MonitorApi {
             check(code == 200) { "HTTP $code" }
             val parser = SseParser()
             val receiver = StatsReceiver()
-            val reader = c.inputStream.bufferedReader()
-            while (true) {
-                val line = reader.readLine() ?: break
-                val event = parser.line(line) ?: continue
-                val stats = MonitorStats.parse(receiver.receive(JSONObject(event.data)) ?: continue)
+            c.inputStream.bufferedReader().lineSequence().forEach { line ->
+                currentCoroutineContext().ensureActive()
+                val event = parser.line(line) ?: return@forEach
+                val stats = MonitorStats.parse(receiver.receive(JSONObject(event.data)) ?: return@forEach)
                 last = System.currentTimeMillis() to stats
                 withContext(Dispatchers.Main) { onStats(stats) }
             }
-        } finally {
-            closer.dispose()
-            c.disconnect()
         }
     }
 

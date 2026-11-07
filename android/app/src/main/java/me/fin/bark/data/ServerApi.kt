@@ -1,21 +1,48 @@
 package me.fin.bark.data
 
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 enum class ExampleType { GET, POST, JSON }
+
+/**
+ * Runs [block], which reads this connection with blocking calls, on Dispatchers.IO. Cancelling the caller disconnects
+ * the connection as soon as cancellation starts, so a stream kept alive by heartbeats ends at once; a job's completion
+ * handler would only run after the read had returned by itself.
+ */
+internal suspend fun <T> HttpURLConnection.closeOnCancel(block: suspend () -> T): T = coroutineScope {
+    // UNDISPATCHED: the finally is armed before block() starts, even if cancellation comes first.
+    val closer = launch(start = CoroutineStart.UNDISPATCHED) {
+        try { awaitCancellation() } finally { disconnect() }
+    }
+    try {
+        block()
+    } catch (e: IOException) {
+        currentCoroutineContext().ensureActive() // our own disconnect: report the cancellation, not the closed socket
+        throw e
+    } finally {
+        closer.cancel()
+    }
+}
 
 /** bark-server client (iOS BarkApi + ServerManager.register). */
 object ServerApi {
@@ -86,9 +113,9 @@ object ServerApi {
         }
     }
 
-    /** Fetches the FCM token; null when Firebase is missing or Google services are unavailable. */
+    /** Fetches the FCM token; null when Firebase is missing or Google services are unavailable. Cancellable, so a caller's timeout ends the wait. */
     suspend fun fcmToken(): String? = runCatching {
-        suspendCoroutine { cont ->
+        suspendCancellableCoroutine { cont ->
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     _tokenError.value = null
@@ -100,6 +127,7 @@ object ServerApi {
             }
         }
     }.getOrElse {
+        if (it is CancellationException) throw it // the caller gave up waiting; that is no Firebase error
         // FirebaseApp is not initialized when google-services.json was not present at build time.
         _tokenError.value = "firebase"
         null

@@ -55,6 +55,16 @@ class PushTest {
         assertEquals(Level.active, out.level)
     }
 
+    @Test fun encryptedDeleteIsSeenAfterDecryption() {
+        val f = CryptoFields("AES128", "CBC", "pkcs7", "1234567890123456")
+        val iv = "2222222222222222"
+        val push = Push.of(mapOf("ciphertext" to Crypto.encrypt(f, """{"id":"saved-id","delete":1}""", iv), "iv" to iv))
+        assertFalse("the outer parameters only carry the ciphertext", push.isDelete)
+        val out = Push.decrypt(push, f)
+        assertTrue(out.isDelete)
+        assertEquals("saved-id", out.id)
+    }
+
     @Test(expected = CryptoException::class) fun ciphertextWithoutKeyFails() {
         Push.decrypt(Push.of(mapOf("ciphertext" to "AAAA")), null)
     }

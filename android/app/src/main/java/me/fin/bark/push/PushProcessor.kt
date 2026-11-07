@@ -74,18 +74,18 @@ object PushProcessor {
     suspend fun process(context: Context, raw: Map<String, String>) {
         // The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`.
         raw["_msgid"]?.let { if (!Prefs.markDelivered(it)) return }
-        var push = Push.of(raw)
+        val push = try {
+            Push.decrypt(Push.of(raw), Prefs.crypto)
+        } catch (e: CryptoException) {
+            Notifier.showError(context, e.message)
+            return
+        }
+        // After decryption, so `{"id":…,"delete":1}` sent encrypted deletes too instead of overwriting the message.
         if (push.isDelete) {
             push.id?.let { id ->
                 Notifier.cancel(context, id)
                 Messages.delete(context) { delete(id) }
             }
-            return
-        }
-        push = try {
-            Push.decrypt(push, Prefs.crypto)
-        } catch (e: CryptoException) {
-            Notifier.showError(context, e.message)
             return
         }
 
