@@ -71,9 +71,26 @@ object Markdown {
 
 /** Same order as iOS NotificationService: decrypt, markdown, level, badge, autoCopy, archive, mute, call, image, icon. */
 object PushProcessor {
+    /** `_msgid`s being handled right now; a second copy arriving meanwhile is dropped. */
+    private val inFlight = mutableSetOf<String>()
+
+    /**
+     * The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`. It is recorded as
+     * delivered only once handled, so a copy cancelled midway (server list changed, FCM time limit) is not lost:
+     * FCM or the SSE replay can still bring it.
+     */
     suspend fun process(context: Context, raw: Map<String, String>) {
-        // The same push may arrive over FCM and SSE; the server tags both copies with one `_msgid`.
-        raw["_msgid"]?.let { if (!Prefs.markDelivered(it)) return }
+        val msgId = raw["_msgid"]
+        if (msgId != null && !synchronized(inFlight) { !Prefs.isDelivered(msgId) && inFlight.add(msgId) }) return
+        try {
+            handle(context, raw, msgId)
+            msgId?.let(Prefs::markDelivered)
+        } finally {
+            msgId?.let { synchronized(inFlight) { inFlight.remove(it) } }
+        }
+    }
+
+    private suspend fun handle(context: Context, raw: Map<String, String>, msgId: String?) {
         val push = try {
             Push.decrypt(Push.of(raw), Prefs.crypto)
         } catch (e: CryptoException) {
@@ -90,7 +107,8 @@ object PushProcessor {
         }
 
         val now = System.currentTimeMillis()
-        val id = push.id ?: UUID.randomUUID().toString()
+        // `_msgid` as the fallback id: handling a push again after a cancellation updates the same message.
+        val id = push.id ?: msgId ?: UUID.randomUUID().toString()
         val bodyText = push.markdown?.let { Markdown.plain(context, it) } ?: push.body
         if (push.autoCopy) context.copyText(push.copy ?: bodyText.orEmpty())
 

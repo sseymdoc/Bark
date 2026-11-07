@@ -32,13 +32,17 @@ object SoundPlayer {
         return Uri.parse("android.resource://${context.packageName}/$id")
     }
 
-    /** Respects ringer mode, Do Not Disturb and a channel the user turned down; critical always plays. */
+    /**
+     * Respects notifications blocked for the whole app, ringer mode, Do Not Disturb and a channel the user turned down;
+     * critical plays unless the app's notifications are blocked (then no notification shows to explain the sound).
+     */
     fun shouldPlay(context: Context, level: Level): Boolean {
         if (level == Level.passive) return false
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (!nm.areNotificationsEnabled()) return false
         if (level == Level.critical) return true
         val am = context.getSystemService(AudioManager::class.java)
         if (am.ringerMode != AudioManager.RINGER_MODE_NORMAL) return false
-        val nm = context.getSystemService(NotificationManager::class.java)
         val channel = nm.getNotificationChannel(level.name) ?: return true
         if (channel.importance < NotificationManager.IMPORTANCE_DEFAULT) return false
         return nm.currentInterruptionFilter <= NotificationManager.INTERRUPTION_FILTER_ALL || channel.canBypassDnd()

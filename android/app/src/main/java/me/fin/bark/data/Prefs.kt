@@ -107,16 +107,17 @@ object Prefs {
 
     fun setLastEventId(serverId: String, id: String) = sp.edit { putString("sseLastId:$serverId", id) }
 
-    /**
-     * Records a push's `_msgid` among the last 200 delivered; false when it was already delivered (FCM and SSE
-     * both carry every Android push). Persisted, so a restarted process still drops the late copy.
-     */
+    private fun deliveredIds() = sp.getString("delivered", "")!!.split(',').filter { it.isNotEmpty() }
+
+    /** Whether a push's `_msgid` is among the last 200 handled (FCM and SSE both carry every Android push). */
     @Synchronized
-    fun markDelivered(msgId: String): Boolean {
-        val ids = sp.getString("delivered", "")!!.split(',').filter { it.isNotEmpty() }
-        if (msgId in ids) return false
-        sp.edit { putString("delivered", (ids.takeLast(199) + msgId).joinToString(",")) }
-        return true
+    fun isDelivered(msgId: String) = msgId in deliveredIds()
+
+    /** Records a handled push's `_msgid`. Persisted, so a restarted process still drops the late copy. */
+    @Synchronized
+    fun markDelivered(msgId: String) {
+        val ids = deliveredIds()
+        if (msgId !in ids) sp.edit { putString("delivered", (ids.takeLast(199) + msgId).joinToString(",")) }
     }
 
     /** Archive pushes that don't carry `isArchive`. */
