@@ -181,17 +181,18 @@ private fun ServerRow(server: Server, isLast: Boolean) {
     when (dialog) {
         "reset" -> TextDialog(stringResource(R.string.resetKey), stringResource(R.string.resetKeyDesc), "", stringResource(R.string.resetKeyPlaceholder), { dialog = null }) { newKey ->
             val token = Prefs.deviceToken
-            scope.launch {
+            // NonCancellable: leaving the page must not stop the reset halfway, with the old key still working.
+            scope.launch { withContext(NonCancellable) {
                 ServerApi.register(server.address, token, newKey.trim())
                     .onSuccess {
                         Prefs.updateServer(server.copy(key = it))
                         context.toast(res.getString(R.string.setSuccessfully))
-                        // Retire the old key only after the new one is saved: a failed or interrupted reset at worst
-                        // leaves the old key working too, never the app holding a retired key.
+                        // Retire the old key only after the new one is saved: a failed reset at worst leaves the old
+                        // key working too, never the app holding a retired key.
                         if (server.key.isNotEmpty() && it != server.key) ServerApi.register(server.address, DELETED_TOKEN, server.key)
                     }
                     .onFailure { context.toast(res.getString(R.string.resetFailed) + ": " + it.message) }
-            }
+            } }
         }
         "name" -> TextDialog(stringResource(R.string.setServerName), null, server.name.orEmpty(), null, { dialog = null }) { name ->
             Prefs.updateServer(server.copy(name = name.trim().ifEmpty { null }))
