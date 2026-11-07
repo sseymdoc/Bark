@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android-only strings. Strings shared with iOS are generated into strings_ios.xml. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="app_name" translatable="false">Bark</string>
+    <string name="channel_active">Notifications</string>
+    <string name="channel_time_sensitive">Time Sensitive</string>
+    <string name="channel_passive">Passive</string>
+    <string name="decryption_failed">Decryption Failed</string>
+    <string name="stop_ringing">Stop</string>
+    <string name="fcm_unavailable">Push service unavailable: %s</string>
+    <string name="fcm_not_configured">Firebase is not configured. Put google-services.json into android/app and rebuild.</string>
+    <string name="hyperos_title">HyperOS Settings Check</string>
+    <string name="hyperos_desc">FCM cannot reach Bark once it is force-stopped or killed by the cleaner. Allow autostart, set battery saver to No restrictions, and lock Bark in Recents.</string>
+    <string name="hyperos_autostart">Allow autostart</string>
+    <string name="hyperos_battery">Battery saver: No restrictions</string>
+    <string name="hyperos_notification">Floating and lock screen notifications</string>
+    <string name="hyperos_dnd">Do Not Disturb access (critical and time sensitive)</string>
+    <string name="hyperos_gms_off">Google services are off. Enable Settings → More settings → Google basic services.</string>
+    <string name="hyperos_gms_on">Google services available</string>
+    <string name="search">Search</string>
+    <string name="fcm_token">FCM Token</string>
+    <string name="import_success">Imported %d messages</string>
+    <string name="import_failed">Import failed: %s</string>
+    <string name="none">None</string>
+    <string name="qr_url">URL</string>
+    <string name="qr_key">Key</string>
+    <string name="scan_qr">Scan QR code</string>
+    <string name="list_mode">List</string>
+    <string name="group_mode">Groups</string>
+    <string name="padding">Padding</string>
+    <string name="back">Back</string>
+</resources>
