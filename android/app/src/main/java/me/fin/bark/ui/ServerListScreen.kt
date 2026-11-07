@@ -115,14 +115,13 @@ fun AddServerDialog(onDismiss: () -> Unit) {
 @Composable
 fun ServerListScreen(nav: Nav) {
     val servers by Prefs.servers.collectAsState()
-    val currentId by Prefs.currentServerId.collectAsState()
     var adding by remember { mutableStateOf(false) }
     Page(stringResource(R.string.serverList), onBack = nav.pop, actions = {
         IconButton(onClick = { adding = true }) { Icon(Icons.Default.Add, stringResource(R.string.AddServer)) }
     }) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(servers, key = { it.id }) { server ->
-                ServerRow(server, current = server.id == (currentId ?: servers.first().id), isLast = servers.size <= 1)
+                ServerRow(server, isLast = servers.size <= 1)
             }
         }
     }
@@ -130,7 +129,7 @@ fun ServerListScreen(nav: Nav) {
 }
 
 @Composable
-private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
+private fun ServerRow(server: Server, isLast: Boolean) {
     val context = LocalContext.current
     val res = LocalResources.current
     val scope = rememberCoroutineScope()
@@ -198,7 +197,8 @@ private fun ServerRow(server: Server, current: Boolean, isLast: Boolean) {
                     scope.launch {
                         if (server.key.isNotEmpty()) ServerApi.register(server.address, DELETED_TOKEN, server.key)
                         Prefs.updateServers { list -> list.filter { it.id != server.id } }
-                        if (current) Prefs.setCurrentServer(Prefs.servers.value.first().id)
+                        // Checked after the request: the default may have changed meanwhile. (No id means the first server.)
+                        if (Prefs.currentServerId.value == server.id) Prefs.setCurrentServer(Prefs.servers.value.first().id)
                         context.toast(res.getString(R.string.deletedSuccessfully))
                     }
                 }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }

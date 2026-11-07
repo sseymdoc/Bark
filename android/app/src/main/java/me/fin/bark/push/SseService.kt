@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -112,7 +113,8 @@ class SseService : Service() {
                         PushProcessor.process(applicationContext, data)
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        Log.w("SseService", "push processing failed for server ${server.id}, event ${event.id}", e)
                     }
                 }
                 event.id?.let { Prefs.setLastEventId(server.id, it) }
