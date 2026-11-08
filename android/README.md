@@ -50,7 +50,7 @@ iOS 的多语言文案改动后，运行 `python3 -I tools/gen_strings.py` 重�
 
 - App 请求 `GET /api/stats/stream`（SSE）、`GET /api/history` 和 `GET /api/beszel/snapshot`（每 30 秒），带请求头 `X-Bark-Key` 和 `X-Bark-Device-Token`，即 `/stream` 用的那组凭据。服务端核对后再转给 Hub，Hub Secret 只留在服务端。
 - 只支持 HTTPS 服务器。普通 bark-server 把 `/api/...` 当成推送，返回 400，监控 tab 会提示该服务器未提供监控；返回 401/403 时提示设备未被认可。
-- 快照或样本超过 3 分钟显示过期，未采集的指标显示 `—`；快照不带 `serverTime` 时按响应的 `Date` 头计算。
+- 快照和服务器样本超过 3 分钟、网络探测样本超过 3 个探测周期（至少 3 分钟）显示过期，未采集的指标显示 `—`；快照不带 `serverTime` 时按响应的 `Date` 头计算。
 - 旧版保存的 Hub 地址、加密的 Hub Secret 和 Beszel 登录信息在升级后首次启动时删除。
 
 ## HyperOS 设置建议

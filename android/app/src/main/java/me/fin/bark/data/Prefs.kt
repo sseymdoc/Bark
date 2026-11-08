@@ -54,9 +54,10 @@ object Prefs {
         val secret = AtomicFile(File(context.noBackupFilesDir, "monitor-secret.json"))
         val keys = listOf("monitorUrl", "monitorSecret", "beszelUrl", "beszelEmail", "beszelPassword")
         if (!secret.baseFile.exists() && keys.none(sp::contains)) return
-        sp.edit { keys.forEach(::remove) }
-        secret.delete()
+        // Keystore entry first: the file and the keys mark the cleanup as unfinished until the last step.
         runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("bark-monitor") }
+        secret.delete()
+        sp.edit { keys.forEach(::remove) }
     }
 
     // region servers

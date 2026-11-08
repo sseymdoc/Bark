@@ -234,7 +234,7 @@ fun MonitorScreen() {
                     currentCoroutineContext().ensureActive()
                     beszelError = when (e) {
                         is MonitorApi.Unauthorized -> res.getString(R.string.monitor_unauthorized)
-                        is BeszelApi.Unavailable -> res.getString(R.string.beszel_unavailable)
+                        is MonitorApi.Unavailable -> res.getString(R.string.beszel_unavailable)
                         else -> res.getString(R.string.beszel_error, e.message ?: e.javaClass.simpleName)
                     }
                 }
