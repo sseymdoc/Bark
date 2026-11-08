@@ -212,7 +212,19 @@ fun MonitorScreen() {
         if (key.isEmpty()) return@LaunchedEffect
         // Too soon after the last fetch: wait out the 5 minutes rather than drop the change; a newer revision restarts the wait.
         if (MonitorApi.history != null) delay(5 * 60_000 - (System.currentTimeMillis() - MonitorApi.historyAt))
-        runCatching { MonitorApi.history(url, MonitorApi.auth(key, Prefs.deviceToken), source) }.onSuccess { history = it }
+        // Retried with backoff: a 401/403 right after FCM rotates the token clears once the new one is registered.
+        var backoff = 2_000L
+        while (true) {
+            try {
+                history = MonitorApi.history(url, MonitorApi.auth(key, Prefs.deviceToken), source)
+                return@LaunchedEffect
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (e is MonitorApi.Unavailable) return@LaunchedEffect
+            }
+            delay(backoff)
+            backoff = (backoff * 2).coerceAtMost(5 * 60_000L)
+        }
     }
 
     // Beszel is polled while its cards are in the layout (or have never been added), this tab is shown and the app
