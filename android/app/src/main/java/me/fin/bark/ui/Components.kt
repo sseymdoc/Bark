@@ -20,7 +20,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
@@ -41,7 +40,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.fin.bark.R
 
-/** Top-level tabs get a large collapsing title; pushed pages get a small bar with a back arrow. */
+/**
+ * Standard 64dp top app bar (a large title left too much empty space above the content); pushed pages add a
+ * back arrow. The bar tints when content scrolls under it.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Page(
@@ -50,15 +52,15 @@ fun Page(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    val behavior = if (onBack == null) TopAppBarDefaults.exitUntilCollapsedScrollBehavior() else TopAppBarDefaults.pinnedScrollBehavior()
-    val text: @Composable () -> Unit = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    val behavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(behavior.nestedScrollConnection),
         topBar = {
-            if (onBack == null) LargeTopAppBar(title = text, actions = actions, scrollBehavior = behavior)
-            else TopAppBar(
-                title = text,
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
+            TopAppBar(
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = {
+                    if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+                },
                 actions = actions,
                 scrollBehavior = behavior,
             )
