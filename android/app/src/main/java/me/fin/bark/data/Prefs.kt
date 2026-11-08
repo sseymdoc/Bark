@@ -55,7 +55,10 @@ object Prefs {
         val keys = listOf("monitorUrl", "monitorSecret", "beszelUrl", "beszelEmail", "beszelPassword")
         val pending = "monitorKeystorePending" // not secret: retries a Keystore deletion that failed on a later start
         if (!secret.baseFile.exists() && keys.none(sp::contains) && !sp.contains(pending)) return
-        sp.edit { keys.forEach(::remove); putBoolean(pending, true) }
+        val editor = sp.edit()
+        keys.forEach(editor::remove)
+        // Committed synchronously: the marker must be on disk before the file that also signals the cleanup is gone.
+        if (!editor.putBoolean(pending, true).commit()) return
         secret.delete()
         runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("bark-monitor") }
             .onSuccess { sp.edit { remove(pending) } }
