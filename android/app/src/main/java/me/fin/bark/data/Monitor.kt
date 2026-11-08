@@ -581,6 +581,12 @@ object MonitorApi {
         return this
     }
 
+    /** Runs [write] only while [source] is still the server in use: a late answer for the previous one is dropped. */
+    @Synchronized
+    internal fun store(source: String, write: () -> Unit) {
+        if (this.source == source) write()
+    }
+
     /** The device token travels with every request, so monitoring needs HTTPS; anything else counts as [Unavailable]. */
     internal fun base(url: String): String {
         val clean = url.trim().trimEnd('/')
@@ -599,7 +605,7 @@ object MonitorApi {
     }
 
     /** Follows `GET /api/stats/stream` (protocol v4: snapshots, then patches) until it drops; [onStats] runs on the main thread. */
-    suspend fun stream(url: String, auth: Map<String, String>, onStats: (MonitorStats) -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun stream(url: String, auth: Map<String, String>, source: String, onStats: (MonitorStats) -> Unit) = withContext(Dispatchers.IO) {
         val c = URL("${base(url)}/api/stats/stream").openConnection() as HttpURLConnection
         // Blocking reads ignore coroutine cancellation; closeOnCancel disconnects as soon as the tab is left.
         c.closeOnCancel {
@@ -616,18 +622,20 @@ object MonitorApi {
                 currentCoroutineContext().ensureActive()
                 val event = parser.line(line) ?: return@forEach
                 val stats = MonitorStats.parse(receiver.receive(JSONObject(event.data)) ?: return@forEach)
-                last = System.currentTimeMillis() to stats
+                store(source) { last = System.currentTimeMillis() to stats }
                 withContext(Dispatchers.Main) { onStats(stats) }
             }
         }
     }
 
-    suspend fun history(url: String, auth: Map<String, String>): History = withContext(Dispatchers.IO) {
+    suspend fun history(url: String, auth: Map<String, String>, source: String): History = withContext(Dispatchers.IO) {
         val (code, text) = ServerApi.request("${base(url)}/api/history", headers = auth, followRedirects = false)
         checkCode(code)
         History.parse(JSONObject(text)).also {
-            history = it
-            historyAt = System.currentTimeMillis()
+            store(source) {
+                history = it
+                historyAt = System.currentTimeMillis()
+            }
         }
     }
 }

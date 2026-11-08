@@ -158,7 +158,7 @@ class BeszelTest {
         MonitorApi.checkCode(200)
     }
 
-    /** Switching the default server must not show the old server's data or keep its history throttle. */
+    /** Switching the default server must not show the old server's data, keep its history throttle or take its late answers. */
     @Test fun cachedDataBelongsToOneServer() {
         MonitorApi.use("https://a key-a")
         MonitorApi.history = History(emptyList(), 0, 0)
@@ -169,6 +169,11 @@ class BeszelTest {
         assertNull(MonitorApi.history)
         assertEquals(0L, MonitorApi.historyAt)
         assertNull(MonitorApi.last)
+        MonitorApi.store("https://a key-a") { MonitorApi.historyAt = 9 }
+        assertEquals("a late answer for the previous server is dropped", 0L, MonitorApi.historyAt)
+        MonitorApi.store("https://b key-b") { MonitorApi.historyAt = 7 }
+        assertEquals(7L, MonitorApi.historyAt)
+        MonitorApi.use("") // leave no cache behind for other tests
     }
 
     @Test fun formats() {

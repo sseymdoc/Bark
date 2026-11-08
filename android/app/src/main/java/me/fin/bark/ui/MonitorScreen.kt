@@ -179,7 +179,7 @@ fun MonitorScreen() {
             while (true) {
                 try {
                     // Read on every attempt: the registered token changes when FCM hands out a new one.
-                    MonitorApi.stream(url, MonitorApi.auth(key, Prefs.deviceToken)) { stats ->
+                    MonitorApi.stream(url, MonitorApi.auth(key, Prefs.deviceToken), source) { stats ->
                         data = stats
                         error = null
                         live = true
@@ -212,7 +212,7 @@ fun MonitorScreen() {
         if (key.isEmpty()) return@LaunchedEffect
         // Too soon after the last fetch: wait out the 5 minutes rather than drop the change; a newer revision restarts the wait.
         if (MonitorApi.history != null) delay(5 * 60_000 - (System.currentTimeMillis() - MonitorApi.historyAt))
-        runCatching { MonitorApi.history(url, MonitorApi.auth(key, Prefs.deviceToken)) }.onSuccess { history = it }
+        runCatching { MonitorApi.history(url, MonitorApi.auth(key, Prefs.deviceToken), source) }.onSuccess { history = it }
     }
 
     // Beszel is polled while its cards are in the layout (or have never been added), this tab is shown and the app
@@ -224,7 +224,7 @@ fun MonitorScreen() {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 try {
-                    beszel = BeszelApi.fetch(url, MonitorApi.auth(key, Prefs.deviceToken))
+                    beszel = BeszelApi.fetch(url, MonitorApi.auth(key, Prefs.deviceToken), source)
                     if (!Prefs.monitorBeszelCardsAdded) {
                         setLayout(layout + MonitorLayout.BESZEL.filter { it !in layout })
                         Prefs.monitorBeszelCardsAdded = true

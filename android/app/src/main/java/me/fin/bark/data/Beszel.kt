@@ -95,11 +95,11 @@ data class BeszelData(
 object BeszelApi {
     @Volatile var last: BeszelData? = null
 
-    suspend fun fetch(url: String, auth: Map<String, String>): BeszelData = withContext(Dispatchers.IO) {
+    suspend fun fetch(url: String, auth: Map<String, String>, source: String): BeszelData = withContext(Dispatchers.IO) {
         val (code, text, date) = ServerApi.request("${MonitorApi.base(url)}/api/beszel/snapshot",
             headers = auth, followRedirects = false, maxResponseBytes = 65_536)
         if (code == 503) throw MonitorApi.Unavailable()
         MonitorApi.checkCode(code)
-        BeszelData.parse(JSONObject(text), SystemClock.elapsedRealtime(), date).also { last = it }
+        BeszelData.parse(JSONObject(text), SystemClock.elapsedRealtime(), date).also { MonitorApi.store(source) { last = it } }
     }
 }
