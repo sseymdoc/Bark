@@ -52,11 +52,14 @@ object ServerApi {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
+    /** [date] is the response's `Date` header in epoch ms, 0 when it has none. */
+    internal data class Response(val code: Int, val text: String, val date: Long)
+
     internal fun request(
         url: String, method: String = "GET", contentType: String? = null, body: String? = null,
         headers: Map<String, String> = emptyMap(),
         followRedirects: Boolean = true, maxResponseBytes: Int? = null,
-    ): Pair<Int, String> {
+    ): Response {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.instanceFollowRedirects = followRedirects
@@ -83,7 +86,7 @@ object ServerApi {
                     output.toString("UTF-8")
                 }
             } ?: ""
-            return code to text
+            return Response(code, text, c.date)
         } finally {
             c.disconnect()
         }
@@ -109,7 +112,7 @@ object ServerApi {
         runCatching {
             var url = "${address.trim('/')}/register?devicetoken=${enc(token)}&device_type=android"
             if (key.isNotEmpty()) url += "&key=${enc(key)}"
-            parse(request(url).second).getJSONObject("data").getString("key")
+            parse(request(url).text).getJSONObject("data").getString("key")
         }
     }
 

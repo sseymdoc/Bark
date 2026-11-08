@@ -63,7 +63,8 @@ data class BeszelData(
             val array = getJSONArray(key)
             return (0 until array.length()).mapNotNull { i -> runCatching { parse(array.getJSONObject(i)) }.getOrNull() }
         }
-        fun parse(json: JSONObject, fetchedElapsed: Long): BeszelData {
+        /** [date] (the response's `Date`, epoch ms) stands in for `serverTime`, which a snapshot served as a file lacks. */
+        fun parse(json: JSONObject, fetchedElapsed: Long, date: Long = 0): BeszelData {
             require(json.get("version") == 1) { "unsupported_snapshot" }
             val systems = json.records("systems") { s ->
                 val load = s.getJSONArray("load")
@@ -84,22 +85,21 @@ data class BeszelData(
                     m.sample("sampledAt"), success?.toInt(), total?.toInt())
             }.distinctBy { it.id }
             return BeszelData(systems, monitors, json.sample("observedAt") ?: error("invalid_snapshot"),
-                json.sample("receivedAt") ?: error("invalid_snapshot"), json.sample("serverTime") ?: error("invalid_snapshot"), fetchedElapsed)
+                json.sample("receivedAt") ?: error("invalid_snapshot"),
+                (if (json.has("serverTime")) json.sample("serverTime") else date.takeIf { it > 0 }) ?: error("invalid_snapshot"), fetchedElapsed)
         }
     }
 }
 
-/** Uses the same address and Bearer secret as Token Monitor. */
+/** Same server, credentials and status codes as [MonitorApi]; 503 (snapshot not readable yet) is unavailable too. */
 object BeszelApi {
-    class Unavailable : Exception()
     @Volatile var last: BeszelData? = null
 
-    suspend fun fetch(url: String, secret: String?): BeszelData = withContext(Dispatchers.IO) {
-        val (code, text) = ServerApi.request("${MonitorApi.base(url)}/api/beszel/snapshot",
-            headers = MonitorApi.auth(secret), followRedirects = false, maxResponseBytes = 65_536)
-        if (code == 401 || code == 403) throw MonitorApi.Unauthorized()
-        if (code == 404 || code == 503) throw Unavailable()
-        check(code == 200) { "HTTP $code" }
-        BeszelData.parse(JSONObject(text), SystemClock.elapsedRealtime()).also { last = it }
+    suspend fun fetch(url: String, auth: Map<String, String>, source: String): BeszelData = withContext(Dispatchers.IO) {
+        val (code, text, date) = ServerApi.request("${MonitorApi.base(url)}/api/beszel/snapshot",
+            headers = auth, followRedirects = false, maxResponseBytes = 65_536)
+        if (code == 503) throw MonitorApi.Unavailable()
+        MonitorApi.checkCode(code)
+        BeszelData.parse(JSONObject(text), SystemClock.elapsedRealtime(), date).also { MonitorApi.store(source) { last = it } }
     }
 }

@@ -44,20 +44,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -66,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -96,8 +92,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,8 +103,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import me.fin.bark.R
 import me.fin.bark.data.BeszelApi
 import me.fin.bark.data.BeszelData
@@ -135,25 +127,32 @@ internal val Mono = FontFamily.Monospace
 
 /**
  * token-monitor's home view (usage, limits, models, sessions, activity, trend), kept live over the Hub's stats stream,
- * plus Beszel's servers and network probes, using the same Hub connection.
+ * plus Beszel's servers and network probes, all read through the default server (it serves them on Bark's port).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MonitorScreen() {
     val res = LocalResources.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var url by remember { mutableStateOf(Prefs.monitorUrl) }
-    var secret by remember { mutableStateOf(Prefs.monitorSecret) }
-    var data by remember { mutableStateOf(MonitorApi.last?.second) }
-    var history by remember { mutableStateOf(MonitorApi.history) }
-    var error by remember { mutableStateOf(if (Prefs.monitorSecretUnavailable) res.getString(R.string.monitor_secret_storage_error) else null) }
-    var live by remember { mutableStateOf(false) }
+    val servers by Prefs.servers.collectAsState()
+    val currentId by Prefs.currentServerId.collectAsState()
+    val server = servers.firstOrNull { it.id == currentId } ?: servers.first()
+    val url = server.cleanAddress
+    val key = server.key
+    // Data belongs to one server: another default server starts from nothing, the history throttle included.
+    val source = "$url $key"
+    val cache = remember(source) { MonitorApi.use(source) }
+    var data by remember(source) { mutableStateOf(cache.last?.second) }
+    var history by remember(source) { mutableStateOf(cache.history) }
+    var error by remember(source) { mutableStateOf<String?>(null) }
+    var unavailable by remember(source) { mutableStateOf(false) }
+    var live by remember(source) { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
     var reconnect by remember { mutableIntStateOf(0) }
-    var configuring by remember { mutableStateOf(false) }
-    var beszel by remember { mutableStateOf(BeszelApi.last) }
-    var beszelError by remember { mutableStateOf<String?>(null) }
-    var menu by remember { mutableStateOf(false) }
+    var beszel by remember(source) { mutableStateOf(BeszelApi.last) }
+    var beszelError by remember(source) { mutableStateOf<String?>(null) }
+    // Not registered yet (no key), or the server answers that it serves no monitoring.
+    val ready = key.isNotEmpty() && !unavailable
     var layout by remember { mutableStateOf(MonitorLayout.parse(Prefs.monitorLayout)) }
     var editing by rememberSaveable { mutableStateOf(false) }
     val setLayout = { cards: List<String> ->
@@ -161,7 +160,7 @@ fun MonitorScreen() {
         Prefs.monitorLayout = MonitorLayout.format(cards)
     }
     BackHandler(editing) { editing = false }
-    val rate = remember { RateTracker() }
+    val rate = remember(source) { RateTracker() }
     // Ages, reset countdowns and running → ended move with the clock even when no update arrives.
     val now by produceState(System.currentTimeMillis()) {
         while (true) {
@@ -171,13 +170,16 @@ fun MonitorScreen() {
     }
 
     // Stays connected while this tab is shown and the app is in the foreground; reconnects with backoff.
-    LaunchedEffect(url, secret, reconnect) {
-        val address = url ?: return@LaunchedEffect
+    LaunchedEffect(url, key, reconnect) {
+        unavailable = false
+        error = null
+        if (key.isEmpty()) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             var backoff = 2_000L
             while (true) {
                 try {
-                    MonitorApi.stream(address, secret) { stats ->
+                    // Read on every attempt: the registered token changes when FCM hands out a new one.
+                    MonitorApi.stream(url, MonitorApi.auth(key, Prefs.deviceToken), source) { stats ->
                         data = stats
                         error = null
                         live = true
@@ -188,12 +190,14 @@ fun MonitorScreen() {
                 } catch (e: Exception) {
                     currentCoroutineContext().ensureActive() // leaving the tab closes the socket; that is no error
                     pulling = false
-                    if (e is MonitorApi.Unauthorized) {
-                        error = res.getString(R.string.monitor_unauthorized)
+                    if (e is MonitorApi.Unavailable) {
+                        unavailable = true
                         live = false
-                        return@repeatOnLifecycle // wait for new settings
+                        return@repeatOnLifecycle // wait for a pull to refresh or another default server
                     }
-                    error = res.getString(R.string.monitor_error, e.message ?: e.javaClass.simpleName)
+                    // 401/403 is retried too: right after FCM rotates the token, it is saved before it is registered.
+                    error = if (e is MonitorApi.Unauthorized) res.getString(R.string.monitor_unauthorized)
+                    else res.getString(R.string.monitor_error, e.message ?: e.javaClass.simpleName)
                 }
                 live = false
                 delay(backoff)
@@ -204,24 +208,35 @@ fun MonitorScreen() {
 
     // The full History only feeds the heatmap and trend; refetch it at most every 5 minutes when it changed.
     val historyRevision = data?.historyRevision
-    LaunchedEffect(url, secret, historyRevision, reconnect) {
-        val address = url ?: return@LaunchedEffect
+    LaunchedEffect(url, key, historyRevision, reconnect) {
+        if (key.isEmpty()) return@LaunchedEffect
         // Too soon after the last fetch: wait out the 5 minutes rather than drop the change; a newer revision restarts the wait.
         if (MonitorApi.history != null) delay(5 * 60_000 - (System.currentTimeMillis() - MonitorApi.historyAt))
-        runCatching { MonitorApi.history(address, secret) }.onSuccess { history = it }
+        // Retried with backoff: a 401/403 right after FCM rotates the token clears once the new one is registered.
+        var backoff = 2_000L
+        while (true) {
+            try {
+                history = MonitorApi.history(url, MonitorApi.auth(key, Prefs.deviceToken), source)
+                return@LaunchedEffect
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (e is MonitorApi.Unavailable) return@LaunchedEffect
+            }
+            delay(backoff)
+            backoff = (backoff * 2).coerceAtMost(5 * 60_000L)
+        }
     }
 
     // Beszel is polled while its cards are in the layout (or have never been added), this tab is shown and the app
     // is in the foreground; its Hub refreshes systems every minute.
     val showsBeszel = layout.any { it in MonitorLayout.BESZEL }
     val pollBeszel = showsBeszel || !Prefs.monitorBeszelCardsAdded
-    LaunchedEffect(url, secret, reconnect, pollBeszel) {
-        val address = url?.takeIf { pollBeszel } ?: return@LaunchedEffect
+    LaunchedEffect(url, key, reconnect, pollBeszel, unavailable) {
+        if (!ready || !pollBeszel) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 try {
-                    beszel = BeszelApi.fetch(address, secret)
-                    Prefs.clearLegacyBeszel()
+                    beszel = BeszelApi.fetch(url, MonitorApi.auth(key, Prefs.deviceToken), source)
                     if (!Prefs.monitorBeszelCardsAdded) {
                         setLayout(layout + MonitorLayout.BESZEL.filter { it !in layout })
                         Prefs.monitorBeszelCardsAdded = true
@@ -231,12 +246,8 @@ fun MonitorScreen() {
                     currentCoroutineContext().ensureActive()
                     beszelError = when (e) {
                         is MonitorApi.Unauthorized -> res.getString(R.string.monitor_unauthorized)
-                        is BeszelApi.Unavailable -> res.getString(R.string.beszel_unavailable)
+                        is MonitorApi.Unavailable -> res.getString(R.string.beszel_unavailable)
                         else -> res.getString(R.string.beszel_error, e.message ?: e.javaClass.simpleName)
-                    }
-                    if (e is MonitorApi.Unauthorized) {
-                        pulling = false
-                        return@repeatOnLifecycle // wait for new settings
                     }
                 }
                 pulling = false
@@ -252,20 +263,14 @@ fun MonitorScreen() {
                 layout = MonitorLayout.DEFAULT
             }) { Text(stringResource(R.string.monitor_reset_layout)) }
             TextButton(onClick = { editing = false }) { Text(stringResource(R.string.done)) }
-        } else if (url != null) {
-            if (url != null) Box(Modifier.size(8.dp).background(if (live) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
-                DropdownMenu(menu, { menu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.monitor_config)) }, onClick = { menu = false; configuring = true })
-                }
-            }
+        } else if (ready) {
+            Box(Modifier.padding(end = 16.dp).size(8.dp).background(if (live) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
         }
     }) { padding ->
         PullToRefreshBox(
             isRefreshing = pulling,
             onRefresh = {
-                pulling = url != null
+                pulling = key.isNotEmpty()
                 MonitorApi.historyAt = 0
                 reconnect++
             },
@@ -275,51 +280,29 @@ fun MonitorScreen() {
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                val stats = data.takeIf { url != null }
-                val servers = beszel.takeIf { url != null }
+                val stats = data.takeIf { ready }
+                val systems = beszel.takeIf { ready }
                 when {
                     editing -> LayoutEditor(layout, setLayout)
-                    url == null -> SetupCard { configuring = true }
+                    !ready -> SetupCard(server.displayName)
                     else -> {
                         listOfNotNull(error, beszelError.takeIf { showsBeszel }).forEach {
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 4.dp))
                         }
                         // Cards of a source that is not set up are left out; the rest show once their data has arrived.
                         val configured = layout
-                        val ready = configured.filter { if (it in MonitorLayout.BESZEL) servers != null else stats != null }
-                        val loading = (stats == null && error == null) || (showsBeszel && servers == null && beszelError == null)
+                        val shown = configured.filter { if (it in MonitorLayout.BESZEL) systems != null else stats != null }
+                        val loading = (stats == null && error == null) || (showsBeszel && systems == null && beszelError == null)
                         if (configured.isEmpty()) {
                             OutlinedButton(onClick = { editing = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.monitor_edit_layout)) }
-                        } else if (ready.isNotEmpty()) {
-                            Dashboard(stats, servers, history, rate.speed(now), now, ready) { editing = true }
+                        } else if (shown.isNotEmpty()) {
+                            Dashboard(stats, systems, history, rate.speed(now), now, shown) { editing = true }
                         }
                         if (configured.isNotEmpty() && loading) Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
                 }
             }
         }
-    }
-
-    if (configuring) ConfigDialog(url, secret, onDismiss = { configuring = false }) { u, s ->
-        try { Prefs.monitorSecret = s } catch (_: Exception) {
-            error = res.getString(R.string.monitor_secret_storage_error)
-            configuring = false
-            return@ConfigDialog
-        }
-        Prefs.monitorUrl = u
-        MonitorApi.last = null
-        MonitorApi.history = null
-        MonitorApi.historyAt = 0
-        BeszelApi.last = null
-        beszel = null
-        beszelError = null
-        url = u
-        secret = s
-        data = null
-        history = null
-        error = null
-        reconnect++
-        configuring = false
     }
 }
 
@@ -470,13 +453,10 @@ private fun LayoutEditor(cards: List<String>, onChange: (List<String>) -> Unit) 
 }
 
 @Composable
-private fun SetupCard(onHub: () -> Unit) {
+private fun SetupCard(server: String) {
     BarkCard {
-        Text(stringResource(R.string.monitor_setup_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.monitor_setup_title, server), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.monitor_setup_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onHub) { Text(stringResource(R.string.monitor_config)) }
-        }
     }
 }
 
@@ -799,35 +779,6 @@ internal fun ClientIcon(id: String, modifier: Modifier = Modifier) {
             Text(id.take(1).uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.onSecondaryContainer)
         }
     }
-}
-
-/** Hub address and shared secret; saving a blank address disconnects. */
-@Composable
-private fun ConfigDialog(url: String?, secret: String?, onDismiss: () -> Unit, onSave: (String?, String?) -> Unit) {
-    var u by remember { mutableStateOf(url.orEmpty()) }
-    var s by remember { mutableStateOf(secret.orEmpty()) }
-    val valid = u.isBlank() || (s.isNotBlank() && runCatching { MonitorApi.base(u) }.isSuccess)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.monitor_config)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.monitor_config_desc), style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
-                    u, { u = it }, label = { Text(stringResource(R.string.monitor_url)) }, placeholder = { Text("https://hub.example.com") },
-                    singleLine = true, isError = !valid, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                )
-                OutlinedTextField(
-                    s, { s = it }, label = { Text(stringResource(R.string.monitor_secret)) }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = valid, onClick = { onSave(u.trim().trimEnd('/').ifEmpty { null }, s.trim().ifEmpty { null }) }) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.Cancel)) } },
-    )
 }
 
 /** Remaining time in token-monitor's short form: "5d18h" / "3h10m" / "45m". */
