@@ -53,11 +53,12 @@ object Prefs {
     private fun forgetMonitorConnection(context: Context) {
         val secret = AtomicFile(File(context.noBackupFilesDir, "monitor-secret.json"))
         val keys = listOf("monitorUrl", "monitorSecret", "beszelUrl", "beszelEmail", "beszelPassword")
-        if (!secret.baseFile.exists() && keys.none(sp::contains)) return
-        // Keystore entry first: the file and the keys mark the cleanup as unfinished until the last step.
-        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("bark-monitor") }
+        val pending = "monitorKeystorePending" // not secret: retries a Keystore deletion that failed on a later start
+        if (!secret.baseFile.exists() && keys.none(sp::contains) && !sp.contains(pending)) return
+        sp.edit { keys.forEach(::remove); putBoolean(pending, true) }
         secret.delete()
-        sp.edit { keys.forEach(::remove) }
+        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("bark-monitor") }
+            .onSuccess { sp.edit { remove(pending) } }
     }
 
     // region servers
