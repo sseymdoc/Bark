@@ -44,11 +44,14 @@ cd android
 
 iOS 的多语言文案改动后，运行 `python3 -I tools/gen_strings.py` 重新生成 `strings_ios.xml`。Android 独有的文案在 `values*/strings.xml` 里手动维护。
 
-## 统一监控连接
+## 监控
 
-「监控 → 设置 → 监控连接」只需一个 HTTPS Hub 地址和 Token Monitor Hub Secret。Token Monitor 保留 SSE，Beszel 卡片每 30 秒读取同一 Hub 的 `GET /api/beszel/snapshot`；需要安装对应后端扩展。手机无需连接 Tailscale，也不保存 Beszel 账号密码。
+「监控」tab 的数据来自「服务器」页的默认服务器，不需要另配地址或密钥：服务端在同一个 HTTPS 端口上同时提供 Bark、token-monitor Hub 和 Beszel 快照时，添加这个地址（设为默认）即可。
 
-已有 Hub 设置自动沿用；Secret 迁移到 Android Keystore 加密的应用私有文件，不参与系统备份。Beszel 首次读取成功后删除旧 Beszel 连接凭据。快照或样本超过 3 分钟会显示过期，未采集指标显示 `—`。后端返回固定投影字段，不提供探测目标、家庭 IP、控制或写入功能；共享 Secret 仍拥有 Token Monitor 原有权限。
+- App 请求 `GET /api/stats/stream`（SSE）、`GET /api/history` 和 `GET /api/beszel/snapshot`（每 30 秒），带请求头 `X-Bark-Key` 和 `X-Bark-Device-Token`，即 `/stream` 用的那组凭据。服务端核对后再转给 Hub，Hub Secret 只留在服务端。
+- 只支持 HTTPS 服务器。普通 bark-server 把 `/api/...` 当成推送，返回 400，监控 tab 会提示该服务器未提供监控；返回 401/403 时提示设备未被认可。
+- 快照或样本超过 3 分钟显示过期，未采集的指标显示 `—`；快照不带 `serverTime` 时按响应的 `Date` 头计算。
+- 旧版保存的 Hub 地址、加密的 Hub Secret 和 Beszel 登录信息在升级后首次启动时删除。
 
 ## HyperOS 设置建议
 

@@ -12,32 +12,45 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import java.time.Instant
 
 /**
- * Snapshot tests read the Hub's live `GET /api/beszel/snapshot`, so no server or probe name is kept in the repo.
- * Set BARK_MONITOR_URL and BARK_MONITOR_SECRET to run them; without both they are skipped.
+ * Snapshot tests read the server's live `GET /api/beszel/snapshot`, so no server or probe name is kept in the repo.
+ * Set BARK_MONITOR_URL, BARK_MONITOR_KEY and BARK_MONITOR_DEVICE_TOKEN (an Android device registered there) to run
+ * them; without all three they are skipped.
  */
 class BeszelTest {
     private companion object {
-        /** The live snapshot's body, fetched once; null when no Hub is configured. */
+        val env = listOf("BARK_MONITOR_URL", "BARK_MONITOR_KEY", "BARK_MONITOR_DEVICE_TOKEN").map { System.getenv(it) }
+
+        /** The live snapshot's body, fetched once, with the response's Date as `serverTime`; null when not configured. */
         val live: String? by lazy {
-            val url = System.getenv("BARK_MONITOR_URL")
-            val secret = System.getenv("BARK_MONITOR_SECRET")
-            if (url.isNullOrBlank() || secret.isNullOrBlank()) return@lazy null
-            val (code, text) = ServerApi.request(
-                "${MonitorApi.base(url)}/api/beszel/snapshot", headers = MonitorApi.auth(secret),
+            val (url, key, token) = env
+            if (env.any { it.isNullOrBlank() }) return@lazy null
+            val (code, text, date) = ServerApi.request(
+                "${MonitorApi.base(url!!)}/api/beszel/snapshot", headers = MonitorApi.auth(key!!, token!!),
                 followRedirects = false, maxResponseBytes = 65_536,
             )
             check(code == 200) { "snapshot HTTP $code" }
-            text
+            JSONObject(text).apply { if (!has("serverTime")) put("serverTime", Instant.ofEpochMilli(date).toString()) }.toString()
         }
     }
 
     /** A fresh copy of the live snapshot to change. */
     private fun snapshot(): JSONObject {
         val text = live
-        assumeTrue("BARK_MONITOR_URL and BARK_MONITOR_SECRET are not set", text != null)
+        assumeTrue("BARK_MONITOR_URL, BARK_MONITOR_KEY and BARK_MONITOR_DEVICE_TOKEN are not set", text != null)
         return JSONObject(text!!)
+    }
+
+    /** A snapshot served as a file has no `serverTime`; the response's Date stands in, and without either it is refused. */
+    @Test fun dateHeaderStandsInForServerTime() {
+        val json = JSONObject().put("version", 1).put("observedAt", "2026-11-07T14:47:03Z").put("receivedAt", "2026-11-07T14:47:04Z")
+            .put("hubStatus", "up").put("systems", JSONArray()).put("monitors", JSONArray())
+        assertEquals(1_794_062_830_000L, BeszelData.parse(json, 0, 1_794_062_830_000L).serverTime)
+        assertThrows(Exception::class.java) { BeszelData.parse(json, 0) }
+        json.put("serverTime", "2026-11-07T14:47:05Z")
+        assertEquals("the snapshot's own clock wins", 1_794_062_825_000L, BeszelData.parse(json, 0, 1L).serverTime)
     }
 
     private fun JSONObject.systems(): JSONArray = getJSONArray("systems")
@@ -131,12 +144,17 @@ class BeszelTest {
         }
     }
 
-    @Test fun oneHttpsOriginAndBearerSecret() {
+    @Test fun httpsServerAndBarkDeviceCredentials() {
         assertEquals("https://example.com:8443", MonitorApi.base(" https://example.com:8443/ "))
-        assertEquals(mapOf("Authorization" to "Bearer shared"), MonitorApi.auth("shared"))
-        for (url in listOf("http://example.com", "https://user:pass@example.com", "https://example.com?secret=x", "https://example.com#x")) {
-            assertThrows(Exception::class.java) { MonitorApi.base(url) }
+        assertEquals(mapOf("X-Bark-Key" to "k", "X-Bark-Device-Token" to "t"), MonitorApi.auth("k", "t"))
+        for (url in listOf("http://example.com", "https://user:pass@example.com", "https://example.com?secret=x", "https://example.com#x", "not a url")) {
+            assertThrows(url, MonitorApi.Unavailable::class.java) { MonitorApi.base(url) }
         }
+        // A plain bark-server reads /api/... as a push to the key "api" and answers 400.
+        for (code in listOf(400, 404, 405)) assertThrows(MonitorApi.Unavailable::class.java) { MonitorApi.checkCode(code) }
+        for (code in listOf(401, 403)) assertThrows(MonitorApi.Unauthorized::class.java) { MonitorApi.checkCode(code) }
+        assertThrows(IllegalStateException::class.java) { MonitorApi.checkCode(502) }
+        MonitorApi.checkCode(200)
     }
 
     @Test fun formats() {

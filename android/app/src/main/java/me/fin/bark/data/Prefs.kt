@@ -2,6 +2,7 @@ package me.fin.bark.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.AtomicFile
 import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,7 +10,9 @@ import me.fin.bark.BuildConfig
 import me.fin.bark.push.CryptoFields
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.URI
+import java.security.KeyStore
 import java.util.UUID
 
 data class Server(
@@ -38,21 +41,22 @@ data class Server(
 /** App settings (iOS BarkSettings / ServerManager / CryptoSettingManager / GroupMuteSettingManager). */
 object Prefs {
     private lateinit var sp: SharedPreferences
-    private lateinit var monitorSecrets: MonitorSecretStore
-    var monitorSecretUnavailable = false
-        private set
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("bark", Context.MODE_PRIVATE)
-        monitorSecrets = MonitorSecretStore(context)
-        runCatching {
-            val legacy = sp.getString("monitorSecret", null)
-            if (!monitorSecrets.exists && legacy != null) monitorSecrets.write(legacy)
-            monitorSecrets.read()
-            sp.edit { remove("monitorSecret") }
-        }.onFailure { monitorSecretUnavailable = true }
+        forgetMonitorConnection(context)
         _servers.value = loadServers()
         _currentServerId.value = sp.getString("currentServerId", null)
+    }
+
+    /** Monitoring now goes through the default server: drop the old Hub address, its Keystore-encrypted secret and the Beszel login. */
+    private fun forgetMonitorConnection(context: Context) {
+        val secret = AtomicFile(File(context.noBackupFilesDir, "monitor-secret.json"))
+        val keys = listOf("monitorUrl", "monitorSecret", "beszelUrl", "beszelEmail", "beszelPassword")
+        if (!secret.baseFile.exists() && keys.none(sp::contains)) return
+        sp.edit { keys.forEach(::remove) }
+        secret.delete()
+        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("bark-monitor") }
     }
 
     // region servers
@@ -155,23 +159,6 @@ object Prefs {
     var exactDate: Boolean
         get() = sp.getBoolean("exactDate", false)
         set(value) = sp.edit { putBoolean("exactDate", value) }
-
-    /** token-monitor Hub address and shared secret for the Monitor tab. */
-    var monitorUrl: String?
-        get() = sp.getString("monitorUrl", null)
-        set(value) = sp.edit { putString("monitorUrl", value) }
-
-    var monitorSecret: String?
-        get() = runCatching { monitorSecrets.read() }.onFailure { monitorSecretUnavailable = true }.getOrNull()
-        set(value) {
-            monitorSecrets.write(value)
-            sp.edit { remove("monitorSecret") }
-            monitorSecretUnavailable = false
-        }
-
-    fun clearLegacyBeszel() = sp.edit {
-        remove("beszelUrl"); remove("beszelEmail"); remove("beszelPassword")
-    }
 
     var monitorBeszelCardsAdded: Boolean
         get() = sp.getBoolean("monitorBeszelCardsAdded", false)

@@ -36,13 +36,9 @@
     <string name="sse_footer">FCM 收不到推送时，由 App 直接从服务器接收。需要常驻通知，耗电略有增加。</string>
     <string name="sse_fcm_fallback">FCM 不可用，正在通过 SSE 接收推送。</string>
     <string name="monitor">监控</string>
-    <string name="monitor_config">监控连接</string>
-    <string name="monitor_config_desc">用同一个 HTTPS Hub 地址和密钥查看用量、服务器和网络探测。地址留空可断开连接。</string>
-    <string name="monitor_url">Hub 地址</string>
-    <string name="monitor_secret">密钥</string>
-    <string name="monitor_setup_title">连接数据源</string>
-    <string name="monitor_setup_desc">从自托管的 token-monitor Hub 查看各 AI 编程工具的 token 用量、费用、额度和会话，从 Beszel Hub 查看服务器状态和网络探测。</string>
-    <string name="monitor_unauthorized">密钥错误，请检查 Hub 配置。</string>
+    <string name="monitor_setup_title">%s 未提供监控</string>
+    <string name="monitor_setup_desc">token 用量、服务器状态和网络探测来自默认服务器，需要它在同一个 HTTPS 端口同时提供 Bark、token-monitor 和 Beszel。在「服务器」页添加这个地址并设为默认，然后下拉刷新。</string>
+    <string name="monitor_unauthorized">服务器不认可这台设备的注册信息。请在「服务器」页重置 key，或删除后重新添加该服务器。</string>
     <string name="monitor_error">加载失败：%s</string>
     <string name="monitor_month">本月</string>
     <string name="monitor_all_time">累计</string>
@@ -109,7 +105,6 @@
     <string name="beszel_avg">1h 均值 %s</string>
     <string name="beszel_loss">丢包 %s%%</string>
     <string name="beszel_unavailable">服务器监控暂未就绪，用量数据仍可正常查看。</string>
-    <string name="monitor_secret_storage_error">无法读取安全存储的密钥，请重新配置监控连接。</string>
     <string name="beszel_partial_failure">最近窗口部分失败</string>
     <string name="beszel_unknown">未知</string>
     <string name="beszel_no_sample">暂无采样</string>

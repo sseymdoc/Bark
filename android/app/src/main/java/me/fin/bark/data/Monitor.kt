@@ -544,9 +544,15 @@ class RateTracker {
     fun speed(now: Long): Double? = speed?.takeIf { now - sampledAt <= 60_000 }
 }
 
-/** Reads a token-monitor Hub (https://github.com/Javis603/token-monitor, docs/API.md). */
+/**
+ * Reads a token-monitor Hub (https://github.com/Javis603/token-monitor, docs/API.md) through the default bark server,
+ * which serves it on the same port and checks the device the way `/stream` does.
+ */
 object MonitorApi {
     class Unauthorized : Exception()
+
+    /** The server serves no monitoring: a plain bark-server reads `/api/...` as a push to key "api" and answers 400. */
+    class Unavailable : Exception()
 
     /** Last state seen (epoch ms to stats), so the tab shows data at once when reopened. */
     @Volatile
@@ -559,17 +565,25 @@ object MonitorApi {
     @Volatile
     var historyAt = 0L
 
+    /** The device token travels with every request, so monitoring needs HTTPS; anything else counts as [Unavailable]. */
     internal fun base(url: String): String {
         val clean = url.trim().trimEnd('/')
-        val uri = java.net.URI(clean)
-        require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null) { "HTTPS Hub URL required" }
+        val uri = runCatching { java.net.URI(clean) }.getOrNull()
+        if (uri?.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null || uri.query != null || uri.fragment != null) throw Unavailable()
         return clean
     }
 
-    internal fun auth(secret: String?) = secret?.takeIf { it.isNotEmpty() }?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty()
+    /** The proof bark-server's `/stream` takes: the server's key and the device token registered with it. */
+    internal fun auth(key: String, token: String) = mapOf("X-Bark-Key" to key, "X-Bark-Device-Token" to token)
+
+    internal fun checkCode(code: Int) {
+        if (code == 401 || code == 403) throw Unauthorized()
+        if (code == 400 || code == 404 || code == 405) throw Unavailable()
+        check(code in 200..299) { "HTTP $code" }
+    }
 
     /** Follows `GET /api/stats/stream` (protocol v4: snapshots, then patches) until it drops; [onStats] runs on the main thread. */
-    suspend fun stream(url: String, secret: String?, onStats: (MonitorStats) -> Unit) = withContext(Dispatchers.IO) {
+    suspend fun stream(url: String, auth: Map<String, String>, onStats: (MonitorStats) -> Unit) = withContext(Dispatchers.IO) {
         val c = URL("${base(url)}/api/stats/stream").openConnection() as HttpURLConnection
         // Blocking reads ignore coroutine cancellation; closeOnCancel disconnects as soon as the tab is left.
         c.closeOnCancel {
@@ -578,10 +592,8 @@ object MonitorApi {
             c.readTimeout = 75_000 // the Hub sends a heartbeat every 30 s
             c.setRequestProperty("Accept", "text/event-stream")
             c.setRequestProperty("x-token-monitor-stream", "4")
-            auth(secret).forEach { (k, v) -> c.setRequestProperty(k, v) }
-            val code = c.responseCode
-            if (code == 401 || code == 403) throw Unauthorized()
-            check(code == 200) { "HTTP $code" }
+            auth.forEach { (k, v) -> c.setRequestProperty(k, v) }
+            checkCode(c.responseCode)
             val parser = SseParser()
             val receiver = StatsReceiver()
             c.inputStream.bufferedReader().lineSequence().forEach { line ->
@@ -594,10 +606,9 @@ object MonitorApi {
         }
     }
 
-    suspend fun history(url: String, secret: String?): History = withContext(Dispatchers.IO) {
-        val (code, text) = ServerApi.request("${base(url)}/api/history", headers = auth(secret), followRedirects = false)
-        if (code == 401 || code == 403) throw Unauthorized()
-        check(code in 200..299) { "HTTP $code" }
+    suspend fun history(url: String, auth: Map<String, String>): History = withContext(Dispatchers.IO) {
+        val (code, text) = ServerApi.request("${base(url)}/api/history", headers = auth, followRedirects = false)
+        checkCode(code)
         History.parse(JSONObject(text)).also {
             history = it
             historyAt = System.currentTimeMillis()

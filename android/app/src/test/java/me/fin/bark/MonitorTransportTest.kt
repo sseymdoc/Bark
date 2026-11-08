@@ -34,7 +34,7 @@ class MonitorTransportTest {
         server.start()
         val base = "http://127.0.0.1:${server.address.port}"
         try {
-            assertEquals(302, ServerApi.request("$base/redirect", headers = mapOf("Authorization" to "Bearer test-only"), followRedirects = false, maxResponseBytes = 64).first)
+            assertEquals(302, ServerApi.request("$base/redirect", headers = mapOf("Authorization" to "Bearer test-only"), followRedirects = false, maxResponseBytes = 64).code)
             assertEquals(0, redirected.get())
             assertEquals("response_too_large", assertThrows(IllegalStateException::class.java) {
                 ServerApi.request("$base/large", followRedirects = false, maxResponseBytes = 64)

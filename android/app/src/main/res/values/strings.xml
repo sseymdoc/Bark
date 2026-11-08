@@ -38,13 +38,9 @@
     <string name="sse_footer">Receives pushes straight from your server when FCM cannot deliver them. Needs an ongoing notification and uses a little more battery.</string>
     <string name="sse_fcm_fallback">FCM is unavailable. Receiving pushes over SSE.</string>
     <string name="monitor">Monitor</string>
-    <string name="monitor_config">Monitor connection</string>
-    <string name="monitor_config_desc">One HTTPS Hub address and secret for token usage, servers and network probes. Leave the address blank to disconnect.</string>
-    <string name="monitor_url">Hub address</string>
-    <string name="monitor_secret">Secret</string>
-    <string name="monitor_setup_title">Connect a data source</string>
-    <string name="monitor_setup_desc">See token usage, costs, limits and sessions of your AI coding tools from a self-hosted token-monitor Hub, and servers and network probes from a Beszel Hub.</string>
-    <string name="monitor_unauthorized">Wrong secret. Check the Hub settings.</string>
+    <string name="monitor_setup_title">%s does not provide monitoring</string>
+    <string name="monitor_setup_desc">Token usage, servers and network probes come from the default server when it serves Bark, token-monitor and Beszel on one HTTPS port. Add that address on the Servers page, make it the default, then pull to refresh.</string>
+    <string name="monitor_unauthorized">The server did not accept this device. Reset the key on the Servers page, or remove the server and add it again.</string>
     <string name="monitor_error">Could not load: %s</string>
     <string name="monitor_month">This month</string>
     <string name="monitor_all_time">All time</string>
@@ -111,7 +107,6 @@
     <string name="beszel_avg">1h avg %s</string>
     <string name="beszel_loss">Loss %s%%</string>
     <string name="beszel_unavailable">Server monitoring is not available yet. Token usage is still shown.</string>
-    <string name="monitor_secret_storage_error">Unable to access secure credential storage. Configure the monitor connection again.</string>
     <string name="beszel_partial_failure">Partial failure in latest window</string>
     <string name="beszel_unknown">Unknown</string>
     <string name="beszel_no_sample">No sample</string>
