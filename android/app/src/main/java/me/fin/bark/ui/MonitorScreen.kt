@@ -139,15 +139,18 @@ fun MonitorScreen() {
     val server = servers.firstOrNull { it.id == currentId } ?: servers.first()
     val url = server.cleanAddress
     val key = server.key
-    var data by remember { mutableStateOf(MonitorApi.last?.second) }
-    var history by remember { mutableStateOf(MonitorApi.history) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var unavailable by remember { mutableStateOf(false) }
-    var live by remember { mutableStateOf(false) }
+    // Data belongs to one server: another default server starts from nothing, the history throttle included.
+    val source = "$url $key"
+    val cache = remember(source) { MonitorApi.use(source) }
+    var data by remember(source) { mutableStateOf(cache.last?.second) }
+    var history by remember(source) { mutableStateOf(cache.history) }
+    var error by remember(source) { mutableStateOf<String?>(null) }
+    var unavailable by remember(source) { mutableStateOf(false) }
+    var live by remember(source) { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
     var reconnect by remember { mutableIntStateOf(0) }
-    var beszel by remember { mutableStateOf(BeszelApi.last) }
-    var beszelError by remember { mutableStateOf<String?>(null) }
+    var beszel by remember(source) { mutableStateOf(BeszelApi.last) }
+    var beszelError by remember(source) { mutableStateOf<String?>(null) }
     // Not registered yet (no key), or the server answers that it serves no monitoring.
     val ready = key.isNotEmpty() && !unavailable
     var layout by remember { mutableStateOf(MonitorLayout.parse(Prefs.monitorLayout)) }
@@ -157,7 +160,7 @@ fun MonitorScreen() {
         Prefs.monitorLayout = MonitorLayout.format(cards)
     }
     BackHandler(editing) { editing = false }
-    val rate = remember { RateTracker() }
+    val rate = remember(source) { RateTracker() }
     // Ages, reset countdowns and running → ended move with the clock even when no update arrives.
     val now by produceState(System.currentTimeMillis()) {
         while (true) {
@@ -187,12 +190,14 @@ fun MonitorScreen() {
                 } catch (e: Exception) {
                     currentCoroutineContext().ensureActive() // leaving the tab closes the socket; that is no error
                     pulling = false
-                    if (e is MonitorApi.Unauthorized || e is MonitorApi.Unavailable) {
-                        if (e is MonitorApi.Unavailable) unavailable = true else error = res.getString(R.string.monitor_unauthorized)
+                    if (e is MonitorApi.Unavailable) {
+                        unavailable = true
                         live = false
                         return@repeatOnLifecycle // wait for a pull to refresh or another default server
                     }
-                    error = res.getString(R.string.monitor_error, e.message ?: e.javaClass.simpleName)
+                    // 401/403 is retried too: right after FCM rotates the token, it is saved before it is registered.
+                    error = if (e is MonitorApi.Unauthorized) res.getString(R.string.monitor_unauthorized)
+                    else res.getString(R.string.monitor_error, e.message ?: e.javaClass.simpleName)
                 }
                 live = false
                 delay(backoff)
@@ -231,10 +236,6 @@ fun MonitorScreen() {
                         is MonitorApi.Unauthorized -> res.getString(R.string.monitor_unauthorized)
                         is BeszelApi.Unavailable -> res.getString(R.string.beszel_unavailable)
                         else -> res.getString(R.string.beszel_error, e.message ?: e.javaClass.simpleName)
-                    }
-                    if (e is MonitorApi.Unauthorized) {
-                        pulling = false
-                        return@repeatOnLifecycle // wait for a pull to refresh or another default server
                     }
                 }
                 pulling = false

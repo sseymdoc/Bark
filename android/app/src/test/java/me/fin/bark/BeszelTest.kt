@@ -2,6 +2,7 @@ package me.fin.bark
 
 import me.fin.bark.data.BeszelData
 import me.fin.bark.data.BeszelMonitor
+import me.fin.bark.data.History
 import me.fin.bark.data.MonitorApi
 import me.fin.bark.data.ServerApi
 import me.fin.bark.data.time
@@ -155,6 +156,19 @@ class BeszelTest {
         for (code in listOf(401, 403)) assertThrows(MonitorApi.Unauthorized::class.java) { MonitorApi.checkCode(code) }
         assertThrows(IllegalStateException::class.java) { MonitorApi.checkCode(502) }
         MonitorApi.checkCode(200)
+    }
+
+    /** Switching the default server must not show the old server's data or keep its history throttle. */
+    @Test fun cachedDataBelongsToOneServer() {
+        MonitorApi.use("https://a key-a")
+        MonitorApi.history = History(emptyList(), 0, 0)
+        MonitorApi.historyAt = 5
+        MonitorApi.use("https://a key-a")
+        assertEquals(5L, MonitorApi.historyAt)
+        MonitorApi.use("https://b key-b")
+        assertNull(MonitorApi.history)
+        assertEquals(0L, MonitorApi.historyAt)
+        assertNull(MonitorApi.last)
     }
 
     @Test fun formats() {

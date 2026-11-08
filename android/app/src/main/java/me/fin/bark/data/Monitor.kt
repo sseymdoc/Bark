@@ -565,6 +565,22 @@ object MonitorApi {
     @Volatile
     var historyAt = 0L
 
+    /** The server [last], [history] and [BeszelApi.last] came from. */
+    private var source: String? = null
+
+    /** The cache for [source]: what came from another server is dropped first, history throttle included. */
+    @Synchronized
+    fun use(source: String): MonitorApi {
+        if (this.source != source) {
+            this.source = source
+            last = null
+            history = null
+            historyAt = 0
+            BeszelApi.last = null
+        }
+        return this
+    }
+
     /** The device token travels with every request, so monitoring needs HTTPS; anything else counts as [Unavailable]. */
     internal fun base(url: String): String {
         val clean = url.trim().trimEnd('/')
